@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "outDir": "bin",
+    "composite": true,
+    "incremental": true,
+    "strict": true,
+    "noImplicitAny": false,
+    "esModuleInterop": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": false,
+    "noUnusedLocals": true,
+    "declaration": true,
+    "declarationMap": true,
+    "downlevelIteration": true,
+    "moduleResolution": "node",
+    "importHelpers": true,
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "sourceMap": true,
+    "useDefineForClassFields": true,
+    "forceConsistentCasingInFileNames": true,
+    "lib": ["es2021"],
+    "target": "es2021"
+  }
+}

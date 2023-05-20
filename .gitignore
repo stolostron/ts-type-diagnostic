@@ -1,0 +1,5 @@
+# Copyright Contributors to the Open Cluster Management project
+
+**/bin/
+**/node_modules/
+**/tsconfig.tsbuildinfo
