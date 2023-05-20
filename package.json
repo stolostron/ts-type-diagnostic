@@ -1,6 +1,6 @@
 {
   "name": "ts-type-diagnostic",
-  "version": "0.0.6",
+  "version": "0.0.9",
   "main": "./bin/tstd.js",
   "bin": {
     "ttd": "./bin/tstd.js"
