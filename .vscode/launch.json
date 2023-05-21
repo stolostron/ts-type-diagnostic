@@ -1,0 +1,24 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Release The Hound",
+      "request": "launch",
+      "args": [
+        "run",
+        "tstd",
+        //"${file}"
+        //"${workspaceFolder}/frontend/src/routes/Applications/AdvancedConfiguration.tsx"
+        "/Users/johnswanke/Development/git2/console-experiments/frontend/src/routes/Applications/ApplicationDetails/ApplicationTopology/topology/components/componentFactory.ts"
+      ],
+      "runtimeExecutable": "npm",
+      "skipFiles": ["<node_internals>/**"],
+      "type": "node",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}

@@ -99,6 +99,7 @@ interface IShapeProblem extends IProblem {
 function isShapeProblem(object: any): object is IShapeProblem {
   return 'isShapeProblem' in object
 }
+let checker: ts.TypeChecker
 
 type DiffTableType = { source?: string; target?: string }[]
 
@@ -2447,6 +2448,7 @@ function getPropertyInfo(prop: ts.Symbol, context, type?: ts.Type, missLike?: st
 }
 
 function getTypeMap(type: ts.Type, context, missLike: string[]) {
+  if (!type) return
   if ((type as any).placeholderInfo) return (type as any).placeholderInfo
   const map = {}
   type.getProperties().forEach((prop) => {
@@ -2697,8 +2699,8 @@ function mergeShapeProblems(s2tProblem: IShapeProblem, t2sProblem: IShapeProblem
     },
     overlap: s2tProblem?.overlap || 0,
     total: Math.max(s2tProblem?.total || 0, t2sProblem?.total || 0),
-    sourceInfo: s2tProblem.sourceInfo,
-    targetInfo: s2tProblem.targetInfo,
+    sourceInfo: s2tProblem?.sourceInfo || t2sProblem?.sourceInfo,
+    targetInfo: s2tProblem?.targetInfo || t2sProblem?.targetInfo,
     isShapeProblem: true,
   }
   return problem
@@ -2773,11 +2775,11 @@ function isFunctionLikeKind(kind: ts.SyntaxKind) {
 /////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////
 
-function findSupportedErrors(semanticDiagnostics: readonly ts.Diagnostic[], fileNames: string[]) {
+function findSemanticErrors(semanticDiagnostics: readonly ts.Diagnostic[], fileNames: string[]) {
   let hadPayoff = true // the first one is always free
   let anyPayoff = false
   const fileMap = {}
-  semanticDiagnostics.forEach(({ code, file, start, messageText }) => {
+  semanticDiagnostics.forEach(({ code, file, start }) => {
     if (file && fileNames.includes(file.fileName)) {
       let cache = fileMap[file.fileName]
       if (!cache) {
@@ -2803,28 +2805,26 @@ function findSupportedErrors(semanticDiagnostics: readonly ts.Diagnostic[], file
   console.log('\n\n--------------------------------------------------------------------------')
 }
 
-const fileNames = process.argv.slice(2).filter((arg) => {
-  if (arg.startsWith('-')) {
-    if (arg.startsWith('-v') || arg.startsWith('--v')) isVerbose = true
-    return false
+export function startSniffing(fileNames, verbose) {
+  // Read tsconfig.json file
+  if (Array.isArray(fileNames) && fileNames.length > 0) {
+    const tsconfigPath = ts.findConfigFile(fileNames[0], ts.sys.fileExists, 'tsconfig.json')
+    if (tsconfigPath) {
+      const tsconfigFile = ts.readConfigFile(tsconfigPath, ts.sys.readFile)
+      options = ts.parseJsonConfigFileContent(tsconfigFile.config, ts.sys, path.dirname(tsconfigPath)).options
+    }
+    isVerbose = verbose
+    //options.isolatedModules = false
+    console.log('starting...')
+    const program = ts.createProgram(fileNames, options)
+    checker = program.getTypeChecker()
+    const syntactic = program.getSyntacticDiagnostics()
+    console.log('looking...')
+    findSemanticErrors(program.getSemanticDiagnostics(), fileNames)
+    if (!!syntactic.length) {
+      console.log('Warning: there were syntax errors.')
+    }
+  } else {
+    console.log('No files specified.')
   }
-  return true
-})
-
-// Read tsconfig.json file
-const tsconfigPath = ts.findConfigFile(fileNames[0], ts.sys.fileExists, 'tsconfig.json')
-if (tsconfigPath) {
-  const tsconfigFile = ts.readConfigFile(tsconfigPath, ts.sys.readFile)
-  options = ts.parseJsonConfigFileContent(tsconfigFile.config, ts.sys, path.dirname(tsconfigPath)).options
-}
-// isVerbose = true
-//options.isolatedModules = false
-console.log('starting...')
-const program = ts.createProgram(fileNames, options)
-const checker = program.getTypeChecker()
-const syntactic = program.getSyntacticDiagnostics()
-console.log('looking...')
-findSupportedErrors(program.getSemanticDiagnostics(), fileNames)
-if (!!syntactic.length) {
-  console.log('Warning: there were syntax errors.')
 }
