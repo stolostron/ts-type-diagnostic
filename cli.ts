@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 
-import * as yargs from 'yargs'
-import { startSniffing } from './the-hound'
+import { startSniffing } from './src/theHound'
 
-let args = yargs.option('verbose', {
-  alias: 'v',
-  demand: false,
-}).argv
+let isVerbose
+const fileNames = process.argv.slice(2).filter((arg) => {
+  if (arg.startsWith('-')) {
+    if (arg.startsWith('-v') || arg.startsWith('--v')) isVerbose = true
+    return false
+  }
+  return true
+})
 
-startSniffing(args._, args.verbose)
+startSniffing(fileNames, isVerbose)
