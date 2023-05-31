@@ -12,7 +12,7 @@ import {
   MatchType,
   isShapeProblem,
 } from './types'
-import { simpleTypeComparision } from './compareUtils'
+import { simpleTypeComparision } from './compareTypes'
 import {
   addLink,
   addNote,

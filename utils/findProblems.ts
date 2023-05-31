@@ -14,7 +14,7 @@ import {
   typeToString,
   typeToStringLike,
 } from './utils'
-import { compareTypes, compareWithPlaceholder, getPlaceholderStack } from './compareUtils'
+import { compareTypes, compareWithPlaceholder, getPlaceholderStack } from './compareTypes'
 
 //======================================================================
 //======================================================================
