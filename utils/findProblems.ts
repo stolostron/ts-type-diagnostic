@@ -562,7 +562,7 @@ function findFunctionCallTargetAndSourceToCompare(node: ts.Node, errorNode, cont
         ],
         pathContext
       )
-      return pathContext.hadPayoff // stops on first conflict just like typescript
+      return context.problems.length > 0 // stops on first conflict just like typescript
     })
   } else {
     console.log(`For error ${context.code}, missing signature for ${typeToString(checker, type)}`)

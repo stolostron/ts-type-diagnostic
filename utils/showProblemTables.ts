@@ -52,7 +52,7 @@ export function showProblemTables(problems, context, stack) {
   // FOR TYPE CONFLICTS, TARGET IS ON THE LEFT AND SOURCE IS ON THE RIGHT TO MATCH 'TARGET = SOURCE' CONVENTION
   // FOR FUNCTION CALLS, THE ORDER IS REVERSED TO MATCH FUNC(ARG) ==> CONST FUNC(PARAM) CONVENTION
   const { code, callMismatch, sourceTitle = 'Source', targetTitle = 'Target', sourceLink, targetDeclared } = context
-  let { prefix, targetLink } = context
+  let { targetLink } = context
   if (context.targetDeclared) {
     targetLink = getNodeLink(targetDeclared)
   }
@@ -137,59 +137,42 @@ export function showProblemTables(problems, context, stack) {
   let specs
   context.errorType = errorType
   switch (errorType) {
-    case ErrorType.objectToSimple:
-      specs = `is a function or object ${chalk.red('but should be simple')}`
-      break
     case ErrorType.simpleToObject:
-      specs = `${chalk.red('should be a function or object')}`
-      break
     case ErrorType.mismatch:
-      prefix = 'The types are'
-      specs = chalk.yellow('mismatched')
-      break
     case ErrorType.misslike:
-      specs = `${chalk.yellow('needs a typecast')}`
-      break
-    case ErrorType.mustDeclare:
-      specs = `${chalk.yellow('needs declaration')}`
-      break
+    case ErrorType.objectToSimple:
     case ErrorType.arrayToNonArray:
-      specs = `is an array ${chalk.red('but should be simple')}`
-      break
     case ErrorType.nonArrayToArray:
-      specs = `${chalk.red('should be an array')}`
-      break
-    case ErrorType.propMissing:
-      //prefix = 'Object'
-      specs = `is ${chalk.red('missing')} properties`
-      break
     case ErrorType.propMismatch:
-      //prefix = 'Object'
-      specs = `has ${chalk.yellow('mismatched')} properties`
+      specs = `${targetTitle} type !== ${sourceTitle} type`
+      break
+    case ErrorType.sourcePropMissing:
+      specs = `${sourceTitle} has too ${chalk.red('few')} properties`
+      break
+    case ErrorType.targetPropMissing:
+      specs = `${sourceTitle} has too ${chalk.red('many')} properties`
       break
     case ErrorType.bothMissing:
-      prefix = 'Object'
-      specs = `has ${chalk.red('missing')} properties`
+      specs = `Both sides have ${chalk.red('missing')} properties`
+      break
+    case ErrorType.mustDeclare:
+      specs = `${targetTitle} ${chalk.yellow('needs declaration')}`
       break
     case ErrorType.missingIndex:
-      prefix = 'The map is'
-      specs = `${chalk.red('missing')} an index property`
+      specs = `The map is ${chalk.red('missing')} an index property`
       break
     case ErrorType.both:
-      prefix = 'Object'
-      specs = `has ${chalk.yellow('mismatched')} and ${chalk.red('missing')} properties`
+      specs = `Both sides have ${chalk.yellow('mismatched')} and ${chalk.red('missing')} properties`
       break
     case ErrorType.tooManyArgs:
-      prefix = 'Too'
-      specs = `${chalk.red('many')} calling arguments`
+      specs = `Too ${chalk.red('many')} calling arguments`
       break
     case ErrorType.tooFewArgs:
-      prefix = 'Too'
-      specs = `${chalk.red('few')} calling arguments`
+      specs = `Too ${chalk.red('few')} calling arguments`
       break
   }
 
-  console.log(`TS${code}: ${prefix} ${specs} (${context.nodeId})`)
+  console.log(`TS${code}: ${specs} (${context.nodeId})`)
 
   // print the table
   p.printTable()
@@ -329,7 +312,7 @@ function showConflicts(p, problems: (ITypeProblem | IShapeProblem)[], context, s
       color = 'red'
     } else if (sourceIsArray !== targetIsArray) {
       errorType = sourceIsArray ? ErrorType.arrayToNonArray : ErrorType.nonArrayToArray
-      color = 'red'
+      color = 'yellow'
     } else if (targetTypeText !== sourceTypeText) {
       const isSourceSimple = isSimpleType(sourceType)
       const isTargetSimple = isSimpleType(targetType)
@@ -341,7 +324,7 @@ function showConflicts(p, problems: (ITypeProblem | IShapeProblem)[], context, s
         color = 'yellow'
       } else {
         errorType = isSourceSimple ? ErrorType.simpleToObject : ErrorType.objectToSimple
-        color = 'red'
+        color = 'yellow'
       }
     }
     const row: any = {
@@ -558,14 +541,16 @@ function showConflicts(p, problems: (ITypeProblem | IShapeProblem)[], context, s
       errorType = ErrorType.misslike
     } else if (missing.length && mismatch.length) {
       errorType = ErrorType.both
-    } else if (missing.length) {
+    } else if (missing.length || (reversed && reversed.missing.length)) {
       if (context.missingIndex) {
         errorType = ErrorType.missingIndex
+      } else if (missing.length && reversed && reversed.missing.length) {
+        errorType = ErrorType.bothMissing
+      } else if (missing.length) {
+        errorType = ErrorType.targetPropMissing
       } else {
-        errorType = ErrorType.propMissing
+        errorType = ErrorType.sourcePropMissing
       }
-    } else if (missing.length || (reversed && reversed.missing.length)) {
-      errorType = ErrorType.bothMissing
     } else if (mismatch.length) {
       errorType = ErrorType.propMismatch
     }

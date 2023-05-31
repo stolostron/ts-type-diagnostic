@@ -18,14 +18,15 @@ export enum ErrorType {
   simpleToObject = 4,
   arrayToNonArray = 5,
   nonArrayToArray = 6,
-  propMissing = 7,
-  propMismatch = 8,
-  bothMissing = 9,
-  both = 10,
-  missingIndex = 11,
-  mustDeclare = 12,
-  tooManyArgs = 13,
-  tooFewArgs = 14,
+  sourcePropMissing = 7,
+  targetPropMissing = 8,
+  propMismatch = 9,
+  bothMissing = 10,
+  both = 11,
+  missingIndex = 12,
+  mustDeclare = 13,
+  tooManyArgs = 14,
+  tooFewArgs = 15,
 }
 
 export interface IPlaceholder {
