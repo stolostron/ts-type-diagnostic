@@ -1,6 +1,10 @@
 # ts-type-diagnostic
 
-## Translate typescript type assignment errors into a conflict table.
+## Show Typescript type assignment errors in a table.
+
+<br/>
+
+**Note:** This doesn't reformat the original Typescript error. This uses the [Compiler API](https://github.com/microsoft/TypeScript/wiki/Using-the-Compiler-API) directly get links to all of the types and properties.
 
 <br/>
 
