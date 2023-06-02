@@ -1,6 +1,6 @@
 {
   "name": "ts-type-diagnostic",
-  "version": "0.0.21",
+  "version": "0.0.24",
   "main": "./bin/cli.js",
   "bin": {
     "tstd": "./bin/cli.js"
