@@ -431,6 +431,7 @@ function findFunctionCallTargetAndSourceToCompare(node: ts.Node, errorNode, cont
           typeText,
           typeId: context.cache.saveType(type),
           fullText: getFullName(name, typeText),
+          nodeText: name,
           nodeLink: getNodeLink(node),
         }
       }
@@ -463,6 +464,7 @@ function findFunctionCallTargetAndSourceToCompare(node: ts.Node, errorNode, cont
           typeText,
           typeId: context.cache.saveType(type),
           fullText: getFullName(name, typeText),
+          nodeText: name,
           nodeLink: getNodeLink(param.valueDeclaration),
           isOpt,
         }
