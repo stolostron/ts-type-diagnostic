@@ -6,7 +6,7 @@ import ts from 'typescript'
 import { findProblems } from './findProblems'
 import { getNodeBlockId, getNodeLink, isFunctionLikeKind } from './utils'
 import { showProblemTables, showTableNotes } from './showProblemTables'
-import { showSuggestions } from './showSuggestions'
+import { showPromptFixes } from './promptFixes/showPromptFixes'
 
 let options: ts.CompilerOptions = {
   target: ts.ScriptTarget.ES5,
@@ -14,6 +14,7 @@ let options: ts.CompilerOptions = {
 }
 let checker: ts.TypeChecker
 let isVerbose = false
+let isFix = false
 
 // errors we ignore
 const ignoreTheseErrors = [6133, 2304, 2448, 2454]
@@ -31,7 +32,7 @@ const ignoreTheseErrors = [6133, 2304, 2448, 2454]
 //======================================================================
 //======================================================================
 
-export function startSniffing(fileNames: string | any[] | readonly string[], verbose: boolean) {
+export function startSniffing(fileNames: string | any[] | readonly string[], verbose: boolean, fix: boolean) {
   // Read tsconfig.json file
   if (Array.isArray(fileNames) && fileNames.length > 0) {
     const tsconfigPath = ts.findConfigFile(fileNames[0], ts.sys.fileExists, 'tsconfig.json')
@@ -71,6 +72,7 @@ function augmentDiagnostics(semanticDiagnostics: readonly ts.Diagnostic[], fileN
     options,
     checker,
     isVerbose,
+    isFix,
   }
   semanticDiagnostics.forEach(({ code: errorCode, file, start }) => {
     if (file && fileNames.includes(file.fileName)) {
@@ -90,8 +92,11 @@ function augmentDiagnostics(semanticDiagnostics: readonly ts.Diagnostic[], fileN
               findProblems(programContext, errorCode, errorNode, normalizedNode, nodeId, cache).forEach(
                 ({ problems, stack, context }) => {
                   showProblemTables(problems, context, stack)
-                  showSuggestions(problems, context, stack)
-                  showTableNotes(problems, context)
+                  if (isFix) {
+                    showPromptFixes(problems, context, stack)
+                  } else {
+                    showTableNotes(problems, context)
+                  }
                   console.log('\n\n')
                   processedNodes.add(nodeId)
                   hadProblem = true
