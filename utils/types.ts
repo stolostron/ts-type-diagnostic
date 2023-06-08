@@ -1,4 +1,5 @@
 /* Copyright Contributors to the Open Cluster Management project */
+import ts from 'typescript'
 export const MAX_SHOWN_PROP_MISMATCH = 6
 export const MAX_COLUMN_WIDTH = 80
 
@@ -82,3 +83,17 @@ export function isShapeProblem(object: any): object is IShapeProblem {
 }
 
 export type DiffTableType = { source?: string; target?: string }[]
+
+export interface ICache {
+  startToNode: any
+  kindToNodes: Map<ts.SyntaxKind, any[]>
+  outputFile?: ts.Node
+  returnToContainer: any
+  arrayItemsToTarget: any
+  containerToReturns: any
+  blocksToDeclarations: any
+  typeIdToType: any
+  startToOutputNode: any
+  saveType: (type: ts.Type) => string
+  getType: (id: number) => ts.Type
+}

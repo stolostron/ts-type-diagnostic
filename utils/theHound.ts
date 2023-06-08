@@ -2,11 +2,14 @@
 
 import cloneDeep from 'lodash/cloneDeep'
 import path from 'path'
+import * as fs from 'fs'
 import ts from 'typescript'
+import prettier from 'prettier'
 import { findProblems } from './findProblems'
 import { getNodeBlockId, getNodeLink, isFunctionLikeKind } from './utils'
 import { showProblemTables, showTableNotes } from './showProblemTables'
 import { showPromptFixes } from './promptFixes/showPromptFixes'
+import { ICache } from './types'
 
 let options: ts.CompilerOptions = {
   target: ts.ScriptTarget.ES5,
@@ -45,17 +48,22 @@ export function startSniffing(fileNames: string | any[] | readonly string[], ver
         module: ts.ModuleKind.CommonJS,
       }
     }
+    isFix = true // fix
     isVerbose = verbose
     //options.isolatedModules = false
     console.log('starting...')
     const program = ts.createProgram(fileNames, options)
     checker = program.getTypeChecker()
     const syntactic = program.getSyntacticDiagnostics()
-    console.log('looking...')
-    augmentDiagnostics(program.getSemanticDiagnostics(), fileNames)
-    if (!!syntactic.length) {
-      console.log('Warning: there were syntax errors.')
+    if (syntactic.length) {
+      console.log('Warning: there are syntax errors.')
+      if (isFix) {
+        console.log('Cannot fix any files.')
+        isFix = false
+      }
     }
+    console.log(isFix ? 'fixing...' : 'looking...')
+    augmentDiagnostics(program.getSemanticDiagnostics(), fileNames)
   } else {
     console.log('No files specified.')
   }
@@ -64,7 +72,7 @@ export function startSniffing(fileNames: string | any[] | readonly string[], ver
 function augmentDiagnostics(semanticDiagnostics: readonly ts.Diagnostic[], fileNames: string[]) {
   let hadProblem = false
   let anyProblem = false
-  const fileMap = {}
+  const fileMap = Map<string, ICache>
   const missingSupport: string[] = []
   const processedNodes = new Set()
   console.log('\n\n')
@@ -85,11 +93,11 @@ function augmentDiagnostics(semanticDiagnostics: readonly ts.Diagnostic[], fileN
         if (errorNode) {
           if (!ignoreTheseErrors.includes(errorCode)) {
             hadProblem = false
-            const normalizedNode = getNormalizedErrorNode(errorNode)
+            const closestTargetNode = getClosestTarget(errorNode)
+            const nodeId = closestTargetNode.getStart()
             // compiler might throw multiple errors for the same problem -- only process one of them
-            const nodeId = normalizedNode.getStart()
             if (!processedNodes.has(nodeId)) {
-              findProblems(programContext, errorCode, errorNode, normalizedNode, nodeId, cache).forEach(
+              findProblems(programContext, errorCode, errorNode, closestTargetNode, nodeId, cache).forEach(
                 ({ problems, stack, context }) => {
                   showProblemTables(problems, context, stack)
                   if (isFix) {
@@ -104,9 +112,9 @@ function augmentDiagnostics(semanticDiagnostics: readonly ts.Diagnostic[], fileN
               )
               if (!hadProblem) {
                 missingSupport.push(
-                  `For error ${errorCode}, missing support ${ts.SyntaxKind[normalizedNode.kind]} ${nodeId}`
+                  `For error ${errorCode}, missing support ${ts.SyntaxKind[closestTargetNode.kind]} ${nodeId}`
                 )
-                missingSupport.push(`${getNodeLink(normalizedNode)}\n`)
+                missingSupport.push(`${getNodeLink(closestTargetNode)}\n`)
               }
             }
           }
@@ -121,11 +129,33 @@ function augmentDiagnostics(semanticDiagnostics: readonly ts.Diagnostic[], fileN
   }
   if (!anyProblem) {
     console.log(`\n--no squirrels--`)
+  } else if (isFix) {
+    Object.entries(fileMap).forEach(([fileName, { hasFixes, outputFile }]) => {
+      // if we fixed some stuff, output it
+      if (hasFixes) {
+        const printer = ts.createPrinter({ removeComments: false })
+        // restore blank lines we preserved
+        let output = printer.printFile(outputFile).replace(/\/\*\* THIS_IS_A_NEWLINE \*\*\//g, '\n')
+
+        // prettify
+        const configFile = prettier.resolveConfigFile.sync(fileName)
+        const options = configFile
+          ? prettier.resolveConfig.sync(configFile)
+          : { printWidth: 120, tabWidth: 2, semi: false, singleQuote: true }
+        output = prettier.format(output, {
+          parser: 'typescript',
+          ...options,
+        })
+
+        // write file
+        fs.writeFileSync(outputFile.fileName, output)
+      }
+    })
   }
   console.log('\n\n--------------------------------------------------------------------------')
 }
 
-function getNormalizedErrorNode(errorNode: ts.Node) {
+function getClosestTarget(errorNode: ts.Node) {
   const errorType = checker.getTypeAtLocation(errorNode)
   return (
     ts.findAncestor(errorNode, (node) => {
@@ -156,7 +186,7 @@ function getNormalizedErrorNode(errorNode: ts.Node) {
 // In case the compiler combines multiple types into one type for comparison
 // We need to keep track of each individual type in order to pinpoint the error
 function cacheNodes(sourceFile: ts.SourceFile) {
-  const cache = {
+  const cache: ICache = {
     startToNode: {},
     kindToNodes: new Map<ts.SyntaxKind, any[]>(),
     returnToContainer: {},
@@ -164,6 +194,7 @@ function cacheNodes(sourceFile: ts.SourceFile) {
     containerToReturns: {},
     blocksToDeclarations: {},
     typeIdToType: {},
+    startToOutputNode: {},
     saveType: (type: ts.Type) => {
       const id = type['id']
       cache.typeIdToType[id] = type
@@ -174,9 +205,12 @@ function cacheNodes(sourceFile: ts.SourceFile) {
     },
   }
 
+  const order: number[] = []
   function mapNodes(node: ts.Node) {
     // STORE BY START OF NODE WHICH IS UNIQUE
-    cache.startToNode[node.getStart()] = node
+    const start = node.getStart()
+    cache.startToNode[start] = node
+    order.push(start)
 
     // GROUP BY WHAT KIND THE NODE IS FOR BELOW
     let nodes = cache.kindToNodes[node.kind]
@@ -189,6 +223,20 @@ function cacheNodes(sourceFile: ts.SourceFile) {
     ts.forEachChild(node, mapNodes)
   }
   mapNodes(sourceFile)
+
+  // if we're fixing a ts, open an output and map from input nodes to output nodes
+  if (isFix) {
+    // need to replace blank lines with a comment to keep blank lines in the output
+    const input = fs.readFileSync(sourceFile.fileName).toString().replace(/\n\n/g, '\n/** THIS_IS_A_NEWLINE **/')
+    cache.outputFile = ts.createSourceFile(sourceFile.fileName, input, ts.ScriptTarget.ES2015, /*setParentNodes */ true)
+
+    function mapOutputNodes(node: ts.Node) {
+      // need to use original node map keys because of blank lines
+      cache.startToOutputNode[order.shift() || -1] = node
+      ts.forEachChild(node, mapOutputNodes)
+    }
+    mapOutputNodes(cache.outputFile)
+  }
 
   Object.entries(cache.kindToNodes).forEach(([kind, nodes]) => {
     switch (Number(kind)) {

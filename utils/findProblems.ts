@@ -136,6 +136,7 @@ function createPropertyAccessTargetAndSourceToCompare(targetNode: ts.Node, sourc
     typeId: context.cache.saveType(targetType),
     fullText: getFullName(targetNode, targetTypeText),
     nodeLink: getNodeLink(targetNode),
+    nodeId: targetNode.getStart(),
   }
 
   // try to get the type of the accessor using the original expression (a = b)
@@ -200,6 +201,7 @@ function findAssignmentTargetAndSourceToCompare(targetNode: ts.Node, sourceNode:
     typeId: context.cache.saveType(targetType),
     fullText: getFullName(targetNode, targetTypeText),
     nodeLink: getNodeLink(targetNode),
+    nodeId: targetNode.getStart(),
   }
   let sourceType: ts.Type = checker.getTypeAtLocation(sourceNode)
 
@@ -299,6 +301,7 @@ function findAssignmentTargetAndSourceToCompare(targetNode: ts.Node, sourceNode:
     typeId: context.cache.saveType(sourceType),
     fullText: getFullName(sourceNode, sourceTypeText),
     nodeLink: getNodeLink(sourceNode),
+    nodeId: sourceNode.getStart(),
   }
 
   // individual array items mismatch the target
@@ -352,6 +355,7 @@ function findReturnStatementTargetAndSourceToCompare(node: ts.Node, containerTyp
         targetTypeText
       ),
       nodeLink: getNodeLink(container),
+      nodeId: container.getStart(),
     }
 
     const arrayItems = context.cache.arrayItemsToTarget[node.getStart()]
@@ -364,6 +368,7 @@ function findReturnStatementTargetAndSourceToCompare(node: ts.Node, containerTyp
         typeId: context.cache.saveType(sourceType),
         fullText: getText(node),
         nodeLink: getNodeLink(node),
+        nodeId: node.getStart(),
       }
       const pathContext = {
         ...context,
@@ -433,6 +438,7 @@ function findFunctionCallTargetAndSourceToCompare(node: ts.Node, errorNode, cont
           fullText: getFullName(name, typeText),
           nodeText: name,
           nodeLink: getNodeLink(node),
+          nodeId: arg.getStart(),
         }
       }
       if (inx < params.length) {
@@ -466,6 +472,7 @@ function findFunctionCallTargetAndSourceToCompare(node: ts.Node, errorNode, cont
           fullText: getFullName(name, typeText),
           nodeText: name,
           nodeLink: getNodeLink(param.valueDeclaration),
+          nodeId: param.valueDeclaration.getStart(),
           isOpt,
         }
       }
@@ -619,6 +626,7 @@ function findArrayItemTargetAndSourceToCompare(arrayItems, targetType, targetInf
             typeId: context.cache.saveType(sourceType),
             fullText: getFullName(sourceNode, sourceTypeText),
             nodeLink: getNodeLink(sourceNode),
+            nodeId: sourceNode.getStart(),
           },
           targetInfo,
         },

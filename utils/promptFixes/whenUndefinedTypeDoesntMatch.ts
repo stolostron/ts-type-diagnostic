@@ -1,5 +1,5 @@
 import chalk from 'chalk'
-import { getNodeLink, typeToStringLike } from './utils'
+import { getNodeLink, typeToStringLike } from '../utils'
 
 // ===============================================================================
 // ===============================================================================

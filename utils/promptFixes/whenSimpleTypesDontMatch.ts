@@ -1,7 +1,7 @@
 import chalk from 'chalk'
 import ts from 'typescript'
-import { ErrorType } from './types'
-import { getNodeLink, typeToStringLike } from './utils'
+import { ErrorType } from '../types'
+import { getNodeLink, typeToStringLike } from '../utils'
 
 //======================================================================
 //======================================================================
@@ -38,6 +38,11 @@ export function whenSimpleTypesDontMatch({ stack, context, suggest }) {
         break
       case !!(targetInfo.type.flags & ts.TypeFlags.StringLike):
         if (!Number.isNaN(Number(sourceInfo.nodeText))) {
+          const onode = context.cache.startToOutputNode[sourceInfo.nodeId]
+
+          ts.addSyntheticLeadingComment(onode, ts.SyntaxKind.MultiLineCommentTrivia, 'test123', false)
+          context.cache.hasFixes = true
+
           suggest(`Add quotes to '${source}'`, sourceInfo.nodeLink)
         } else {
           suggest(`Convert ${source} to string`, sourceInfo.nodeLink, `String(${sourceInfo.nodeText}).toString()`)

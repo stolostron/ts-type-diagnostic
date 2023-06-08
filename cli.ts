@@ -2,6 +2,7 @@
 
 import { startSniffing } from './utils/theHound'
 
+let isFix: boolean = false
 let isVerbose: boolean = false
 const fileNames = process.argv.slice(2).filter((arg) => {
   if (arg.startsWith('-')) {
