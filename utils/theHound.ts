@@ -73,6 +73,7 @@ function augmentDiagnostics(semanticDiagnostics: readonly ts.Diagnostic[], fileN
   let hadProblem = false
   let anyProblem = false
   const fileMap = Map<string, ICache>
+  const fixMap = {}
   const missingSupport: string[] = []
   const processedNodes = new Set()
   console.log('\n\n')
@@ -84,10 +85,19 @@ function augmentDiagnostics(semanticDiagnostics: readonly ts.Diagnostic[], fileN
   }
   semanticDiagnostics.forEach(({ code: errorCode, file, start }) => {
     if (file && fileNames.includes(file.fileName)) {
-      let cache = fileMap[file.fileName]
+      const fileName = file.fileName
+      let cache = fileMap[fileName]
       if (!cache) {
-        cache = fileMap[file.fileName] = cacheNodes(file)
+        let outputFile: ts.SourceFile | undefined
+        if (isFix) {
+          // to preserve blank lines
+          fixMap[fileName] = fs.readFileSync(fileName).toString().replace(/\n\n/g, '\n/** THIS_IS_A_NEWLINE **/')
+          // use this to create nodes that can be mapped to output string
+          outputFile = ts.createSourceFile(fileName, fixMap[fileName], ts.ScriptTarget.ES2015, /*setParentNodes */ true)
+        }
+        cache = fileMap[fileName] = cacheNodes(file, outputFile)
       }
+
       if (start) {
         let errorNode = cache.startToNode[start]
         if (errorNode) {
@@ -130,14 +140,26 @@ function augmentDiagnostics(semanticDiagnostics: readonly ts.Diagnostic[], fileN
   if (!anyProblem) {
     console.log(`\n--no squirrels--`)
   } else if (isFix) {
-    Object.entries(fileMap).forEach(([fileName, { hasFixes, outputFile }]) => {
+    Object.entries(fileMap).forEach(([fileName, { fixes }]) => {
       // if we fixed some stuff, output it
-      if (hasFixes) {
-        const printer = ts.createPrinter({ removeComments: false })
-        // restore blank lines we preserved
-        let output = printer.printFile(outputFile).replace(/\/\*\* THIS_IS_A_NEWLINE \*\*\//g, '\n')
+      if (fixes.length) {
+        //const printer = ts.createPrinter({ removeComments: false })
 
-        // prettify
+        // get the output text
+        let output: string = fixMap[fileName]
+
+        // apply the fixes--last first to preserve positions of above changes
+        fixes.sort((a: { pos: number }, b: { pos: number }) => {
+          return b.pos - a.pos
+        })
+        fixes.forEach(({ pos, end, replace }) => {
+          output = `${output.substring(0, pos)}${replace}${output.substring(end)}`
+        })
+
+        // restore blank lines we preserved
+        output = output.replace(/\/\*\* THIS_IS_A_NEWLINE \*\*\//g, '\n')
+
+        // prettify the output
         const configFile = prettier.resolveConfigFile.sync(fileName)
         const options = configFile
           ? prettier.resolveConfig.sync(configFile)
@@ -147,8 +169,8 @@ function augmentDiagnostics(semanticDiagnostics: readonly ts.Diagnostic[], fileN
           ...options,
         })
 
-        // write file
-        fs.writeFileSync(outputFile.fileName, output)
+        // write output to file
+        fs.writeFileSync(fileName, output)
       }
     })
   }
@@ -185,16 +207,17 @@ function getClosestTarget(errorNode: ts.Node) {
 //======================================================================
 // In case the compiler combines multiple types into one type for comparison
 // We need to keep track of each individual type in order to pinpoint the error
-function cacheNodes(sourceFile: ts.SourceFile) {
+function cacheNodes(sourceFile: ts.SourceFile, outputFile?: ts.SourceFile) {
   const cache: ICache = {
-    startToNode: {},
+    startToNode: new Map<number, ts.Node>(),
     kindToNodes: new Map<ts.SyntaxKind, any[]>(),
     returnToContainer: {},
     arrayItemsToTarget: {},
     containerToReturns: {},
     blocksToDeclarations: {},
     typeIdToType: {},
-    startToOutputNode: {},
+    startToOutputNode: new Map<number, { pos: number; end: number }>(),
+    fixes: [],
     saveType: (type: ts.Type) => {
       const id = type['id']
       cache.typeIdToType[id] = type
@@ -224,18 +247,13 @@ function cacheNodes(sourceFile: ts.SourceFile) {
   }
   mapNodes(sourceFile)
 
-  // if we're fixing a ts, open an output and map from input nodes to output nodes
-  if (isFix) {
-    // need to replace blank lines with a comment to keep blank lines in the output
-    const input = fs.readFileSync(sourceFile.fileName).toString().replace(/\n\n/g, '\n/** THIS_IS_A_NEWLINE **/')
-    cache.outputFile = ts.createSourceFile(sourceFile.fileName, input, ts.ScriptTarget.ES2015, /*setParentNodes */ true)
-
+  // if we're fixing a ts, map node positions to output file positions
+  if (outputFile) {
     function mapOutputNodes(node: ts.Node) {
-      // need to use original node map keys because of blank lines
-      cache.startToOutputNode[order.shift() || -1] = node
+      cache.startToOutputNode[order.shift() || -1] = { pos: node.getStart(), end: node.getEnd() }
       ts.forEachChild(node, mapOutputNodes)
     }
-    mapOutputNodes(cache.outputFile)
+    mapOutputNodes(outputFile)
   }
 
   Object.entries(cache.kindToNodes).forEach(([kind, nodes]) => {
@@ -244,7 +262,7 @@ function cacheNodes(sourceFile: ts.SourceFile) {
       // THE ERROR WILL BE ON THIS LINE BUT THE TARGET/SOURCE CAN BE DEFINED ON ANOTHER LINE
       // REMEMBER WHERE THEY"RE LOCATED FOR THE HERELINK IN THE SUGGESTIONS
       case ts.SyntaxKind.VariableDeclaration:
-        nodes.forEach((node) => {
+        nodes.forEach((node: ts.Node) => {
           const blockId = getNodeBlockId(node)
           let declareMap = cache.blocksToDeclarations[blockId]
           if (!declareMap) {
@@ -256,7 +274,7 @@ function cacheNodes(sourceFile: ts.SourceFile) {
 
       // FOR EACH 'RETURN' REMEBER WHAT ITS CONTAINER IS TO DO THAT CHECK
       case ts.SyntaxKind.ReturnStatement:
-        nodes.forEach((returnNode) => {
+        nodes.forEach((returnNode: { parent: ts.Node | undefined; getStart: () => string | number }) => {
           const container = ts.findAncestor(returnNode.parent, (node) => {
             return !!node && (isFunctionLikeKind(node.kind) || ts.isClassStaticBlockDeclaration(node))
           })
@@ -272,7 +290,7 @@ function cacheNodes(sourceFile: ts.SourceFile) {
         break
       // FOR EACH LITERAL ARRAY, REMEMBER A PARENT LOCATION WE CAN REFERENCE BELOW
       case ts.SyntaxKind.ArrayLiteralExpression:
-        nodes.forEach((node) => {
+        nodes.forEach((node: ts.Node) => {
           const arrayNode =
             ts.findAncestor(node, (node) => {
               return (
@@ -283,24 +301,26 @@ function cacheNodes(sourceFile: ts.SourceFile) {
               )
             }) || node
 
-          const syntaxList = node.getChildren().find(({ kind }) => kind === ts.SyntaxKind.SyntaxList)
-
-          const items = syntaxList.getChildren()
-          let objectLiterals = syntaxList
-            .getChildren()
-            .filter(({ kind }) => kind === ts.SyntaxKind.ObjectLiteralExpression)
-          if (syntaxList.getChildren().length === 0 && objectLiterals.length === 0) {
-            const fake = cloneDeep(syntaxList)
-            fake.properties = ts.factory.createObjectLiteralExpression([]).properties
-            fake.kind = ts.SyntaxKind.ObjectLiteralExpression
-            objectLiterals = [fake]
-          }
-
           let arrayItems = cache.arrayItemsToTarget[arrayNode.getStart()]
           if (!arrayItems) {
             arrayItems = cache.arrayItemsToTarget[arrayNode.getStart()] = []
           }
-          arrayItems.push(items)
+          const syntaxList = node.getChildren().find(({ kind }) => kind === ts.SyntaxKind.SyntaxList)
+          if (syntaxList) {
+            const items = syntaxList.getChildren()
+            let objectLiterals = syntaxList
+              .getChildren()
+              .filter(({ kind }) => kind === ts.SyntaxKind.ObjectLiteralExpression)
+            if (syntaxList.getChildren().length === 0 && objectLiterals.length === 0) {
+              const fake = cloneDeep(syntaxList)
+              // @ts-expect-error
+              fake['kind'] = ts.SyntaxKind.ObjectLiteralExpression
+              fake['properties'] = ts.factory.createObjectLiteralExpression([]).properties
+              objectLiterals = [fake]
+            }
+            arrayItems.push(items)
+          }
+
           cache.arrayItemsToTarget[arrayNode.getStart()] = arrayItems.flat()
         })
 

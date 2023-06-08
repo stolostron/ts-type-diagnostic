@@ -84,16 +84,22 @@ export function isShapeProblem(object: any): object is IShapeProblem {
 
 export type DiffTableType = { source?: string; target?: string }[]
 
+export interface IFix {
+  pos: number
+  end: number
+  replace: string
+}
 export interface ICache {
-  startToNode: any
+  startToNode: Map<number, ts.Node>
   kindToNodes: Map<ts.SyntaxKind, any[]>
-  outputFile?: ts.Node
   returnToContainer: any
   arrayItemsToTarget: any
   containerToReturns: any
   blocksToDeclarations: any
   typeIdToType: any
-  startToOutputNode: any
+  outputFile?: ts.Node
+  startToOutputNode: Map<number, { pos: number; end: number }>
+  fixes: IFix[]
   saveType: (type: ts.Type) => string
   getType: (id: number) => ts.Type
 }

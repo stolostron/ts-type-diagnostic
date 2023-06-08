@@ -39,11 +39,8 @@ export function whenSimpleTypesDontMatch({ stack, context, suggest }) {
       case !!(targetInfo.type.flags & ts.TypeFlags.StringLike):
         if (!Number.isNaN(Number(sourceInfo.nodeText))) {
           const onode = context.cache.startToOutputNode[sourceInfo.nodeId]
-
-          ts.addSyntheticLeadingComment(onode, ts.SyntaxKind.MultiLineCommentTrivia, 'test123', false)
-          context.cache.hasFixes = true
-
-          suggest(`Add quotes to '${source}'`, sourceInfo.nodeLink)
+          context.cache.fixes.push({ pos: onode.pos, end: onode.end, replace: `'${sourceInfo.nodeText}'` })
+          //suggest(`Add quotes to '${source}'`, sourceInfo.nodeLink)
         } else {
           suggest(`Convert ${source} to string`, sourceInfo.nodeLink, `String(${sourceInfo.nodeText}).toString()`)
         }
