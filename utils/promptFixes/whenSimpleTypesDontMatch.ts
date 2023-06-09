@@ -1,7 +1,7 @@
 import chalk from 'chalk'
 import ts from 'typescript'
-import { ErrorType } from '../types'
-import { getNodeLink, typeToStringLike } from '../utils'
+import { ErrorType, IPromptFix } from '../types'
+import { getNodeLink, typeToStringLike, getNodePos } from '../utils'
 
 //======================================================================
 //======================================================================
@@ -15,13 +15,17 @@ import { getNodeLink, typeToStringLike } from '../utils'
 //======================================================================
 //======================================================================
 //======================================================================
-export function whenSimpleTypesDontMatch({ stack, context, suggest }) {
+export function whenSimpleTypesDontMatch({ stack, context, suggest, promptFixes }) {
   if (context.captured) return
-  const { checker } = context
+  const { checker, sourceTitle = 'Source', targetTitle = 'Target' } = context
 
   const layer = stack[stack.length - 1]
   const { sourceInfo, targetInfo } = layer
   if (context.errorType === ErrorType.mismatch) {
+    const promptFix: IPromptFix = {
+      prompt: 'Fix this mismatch?',
+      choices: [],
+    }
     const source = chalk.green(sourceInfo.nodeText)
     const target = chalk.green(targetInfo.nodeText)
     switch (true) {
@@ -38,11 +42,19 @@ export function whenSimpleTypesDontMatch({ stack, context, suggest }) {
         break
       case !!(targetInfo.type.flags & ts.TypeFlags.StringLike):
         if (!Number.isNaN(Number(sourceInfo.nodeText))) {
-          const onode = context.cache.startToOutputNode[sourceInfo.nodeId]
-          context.cache.fixes.push({ pos: onode.pos, end: onode.end, replace: `'${sourceInfo.nodeText}'` })
-          //suggest(`Add quotes to '${source}'`, sourceInfo.nodeLink)
+          promptFix.choices.push({
+            description: `Convert ${sourceTitle} ${source} to 'string' by adding quotes to '${source}'`,
+            ...getNodePos(context, sourceInfo.nodeId),
+            replace: `'${sourceInfo.nodeText}'`,
+          })
         } else {
-          suggest(`Convert ${source} to string`, sourceInfo.nodeLink, `String(${sourceInfo.nodeText}).toString()`)
+          const end = getNodePos(context, sourceInfo.nodeId).end
+          promptFix.choices.push({
+            description: `Convert ${sourceTitle} ${source} to 'string' with this ${source}.toString()`,
+            beg: end,
+            end,
+            replace: '.toString()',
+          })
         }
         break
       case !!(targetInfo.type.flags & ts.TypeFlags.BooleanLike):
@@ -54,11 +66,14 @@ export function whenSimpleTypesDontMatch({ stack, context, suggest }) {
         break
     }
     const sourceTypeLike = typeToStringLike(checker, sourceInfo.type)
-    const targetLink = context.targetDeclared ? getNodeLink(context.targetDeclared) : targetInfo.nodeLink
-    suggest(
-      `Union ${target} with ${chalk.green(sourceTypeLike)}`,
-      targetLink,
-      `${targetInfo.fullText} | ${sourceTypeLike}`
-    )
+    const nodeId = context.targetDeclared ? context.targetDeclared.getStart() : targetInfo.nodeId
+    promptFix.choices.push({
+      description: `Union ${targetTitle} ${target} with '${sourceTypeLike}' like this ${chalk.green(
+        `${targetInfo.fullText} | ${sourceTypeLike}`
+      )}`,
+      ...getNodePos(context, nodeId),
+      replace: `${targetInfo.fullText} | ${sourceTypeLike}`,
+    })
+    promptFixes.push(promptFix)
   }
 }

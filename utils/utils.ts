@@ -357,6 +357,11 @@ export function filterProblems(typeProblem: ITypeProblem | undefined, shapeProbl
   return problems
 }
 
+export function getNodePos(context, nodeId) {
+  const node = context.cache.startToOutputNode[nodeId]
+  return { beg: node.getStart(), end: node.getEnd() }
+}
+
 export function isFunctionLikeKind(kind: ts.SyntaxKind) {
   switch (kind) {
     case ts.SyntaxKind.ClassDeclaration:

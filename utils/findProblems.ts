@@ -162,7 +162,6 @@ function createPropertyAccessTargetAndSourceToCompare(targetNode: ts.Node, sourc
 
   context = {
     ...context,
-    prefix: 'The object',
     sourceNode,
     targetNode,
     sourceLink: placeholderInfo.nodeLink,
@@ -171,7 +170,6 @@ function createPropertyAccessTargetAndSourceToCompare(targetNode: ts.Node, sourc
     targetTitle: 'Object',
     sourceTitle: 'Property',
     missingAccess: true,
-    hadPayoff: true,
   }
   const { problems, stack } = compareWithPlaceholder(targetInfo, placeholderInfo, context)
 
@@ -221,14 +219,15 @@ function findAssignmentTargetAndSourceToCompare(targetNode: ts.Node, sourceNode:
     // if function, need to make sure each type returned can be assigned to target
     const returns = context.cache.containerToReturns[sourceNode.getStart()]
     if (returns) {
-      let hadPayoff = false
+      let hadProblem = false
       returns.forEach((rn) => {
-        if (hadPayoff) {
+        if (hadProblem) {
           console.log('\n\n')
         }
-        hadPayoff = findReturnStatementTargetAndSourceToCompare(rn, targetType, context)
+        findReturnStatementTargetAndSourceToCompare(rn, targetType, context)
+        hadProblem = context.problems.length > 0
       })
-      return hadPayoff
+      return hadProblem
     } else {
       //======================================================================
       //===============   ASSIGN LITERAL ==========================
@@ -285,7 +284,6 @@ function findAssignmentTargetAndSourceToCompare(targetNode: ts.Node, sourceNode:
         targetTitle: 'Map',
         sourceTitle: 'Index',
         missingIndex: true,
-        hadPayoff: true,
       }
 
       const { problems, stack } = compareWithPlaceholder(targetInfo, placeholderInfo, context)
@@ -307,17 +305,14 @@ function findAssignmentTargetAndSourceToCompare(targetNode: ts.Node, sourceNode:
   // individual array items mismatch the target
   const pathContext = {
     ...context,
-    prefix: isStructuredType(targetType) || isStructuredType(sourceType) ? 'Object' : 'One side',
     sourceNode,
     targetNode,
     sourceLink: getNodeLink(sourceNode),
     targetLink: getNodeLink(targetNode),
     targetDeclared: getNodeDeclaration(targetNode, context.cache),
-    hadPayoff: false,
   }
   compareTypes(targetType, sourceType, getPlaceholderStack(targetInfo, sourceInfo, pathContext), pathContext)
-
-  return pathContext.hadPayoff
+  return pathContext.problems.length > 0
 }
 
 //======================================================================
@@ -374,11 +369,9 @@ function findReturnStatementTargetAndSourceToCompare(node: ts.Node, containerTyp
         ...context,
         sourceNode: node,
         targetNode: container,
-        prefix: 'The return type',
         sourceLink,
         targetLink,
         sourceTitle: 'Return',
-        hadPayoff: false,
       }
       compareTypes(
         targetType,
@@ -392,7 +385,7 @@ function findReturnStatementTargetAndSourceToCompare(node: ts.Node, containerTyp
         pathContext,
         options.strictFunctionTypes
       )
-      return pathContext.hadPayoff
+      return pathContext.problems.length > 0
     }
   }
   return false
@@ -543,12 +536,10 @@ function findFunctionCallTargetAndSourceToCompare(node: ts.Node, errorNode, cont
         errorIndex,
         callMismatch: true,
         tooManyArguments,
-        prefix: 'The calling argument type',
         sourceLink: sourceInfo.nodeLink,
         targetLink: targetInfo?.nodeLink,
         sourceTitle: 'Caller',
         targetTitle: 'Callee',
-        hadPayoff: false,
       }
       const remaining = callingPairs.length - inx - 1
       if (remaining) {
@@ -604,12 +595,10 @@ function findArrayItemTargetAndSourceToCompare(arrayItems, targetType, targetInf
     const sourceTypeText = typeToString(checker, sourceType)
     const pathContext = {
       ...context,
-      prefix: 'The array item type',
       sourceLink: getNodeLink(sourceNode),
       targetLink: targetInfo.nodeLink,
       sourceTitle: 'Item',
       targetTitle: 'Target',
-      hadPayoff: false,
     }
     const remaining = arrayItems.length - inx - 1
     if (remaining) {

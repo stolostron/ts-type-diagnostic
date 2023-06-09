@@ -1,6 +1,7 @@
 /* Copyright Contributors to the Open Cluster Management project */
 
 import chalk from 'chalk'
+import inquirer from 'inquirer'
 
 import { whenSimpleTypesDontMatch } from './whenSimpleTypesDontMatch'
 import { whenCallArgumentsDontMatch } from './whenCallArgumentsDontMatch'
@@ -10,6 +11,7 @@ import { whenUndefinedTypeDoesntMatch } from './whenUndefinedTypeDoesntMatch'
 import { whenNeverType } from './whenNeverType'
 import { whenPrototypesDontMatch } from './whenPrototypesDontMatch'
 import { whenTypeShapesDontMatch } from './whenTypeShapesDontMatch'
+import { IPromptFix } from '../types'
 
 //======================================================================
 //======================================================================
@@ -24,7 +26,7 @@ import { whenTypeShapesDontMatch } from './whenTypeShapesDontMatch'
 //======================================================================
 //======================================================================
 
-export function showPromptFixes(problems, context, stack) {
+export async function showPromptFixes(problems, context, stack) {
   // unified suggestion method
   const suggest = (msg: string, link?: string, code?: string) => {
     let multiLine = false
@@ -49,11 +51,14 @@ export function showPromptFixes(problems, context, stack) {
     }
   }
 
+  // get prompt fixes if any
+  const promptFixes: IPromptFix[] = []
   const whenContext = {
     problems,
     context,
     stack,
     suggest,
+    promptFixes,
   }
   whenCallArgumentsDontMatch(whenContext)
   whenSimpleTypesDontMatch(whenContext)
@@ -63,4 +68,31 @@ export function showPromptFixes(problems, context, stack) {
   whenUndefinedTypeDoesntMatch(whenContext)
   whenNeverType(whenContext)
   whenPrototypesDontMatch(whenContext)
+
+  // process any promptFixes
+  let anyQuit = false
+  for (let promptFix of promptFixes) {
+    const { prompt, choices } = promptFix
+    if (choices.length) {
+      const questions = [
+        {
+          type: 'rawlist',
+          name: 'fix',
+          message: prompt,
+          choices: ['No', 'Quit', ...choices.map((choice: any) => choice.description)],
+        },
+      ]
+      const pick = await inquirer.prompt(questions)
+      if (pick.fix === 'Quit') {
+        anyQuit = true
+        break
+      } else if (pick.fix !== 'No') {
+        const fix = choices.find((choice) => choice.description === pick.fix)
+        if (fix) {
+          context.cache.sourceFixes.push(fix)
+        }
+      }
+    }
+  }
+  return anyQuit
 }

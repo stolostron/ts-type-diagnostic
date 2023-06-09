@@ -84,11 +84,17 @@ export function isShapeProblem(object: any): object is IShapeProblem {
 
 export type DiffTableType = { source?: string; target?: string }[]
 
-export interface IFix {
-  pos: number
+export interface ISourceFix {
+  description: string
+  beg: number
   end: number
   replace: string
 }
+export interface IPromptFix {
+  prompt: string
+  choices: ISourceFix[]
+}
+
 export interface ICache {
   startToNode: Map<number, ts.Node>
   kindToNodes: Map<ts.SyntaxKind, any[]>
@@ -99,7 +105,7 @@ export interface ICache {
   typeIdToType: any
   outputFile?: ts.Node
   startToOutputNode: Map<number, { pos: number; end: number }>
-  fixes: IFix[]
+  sourceFixes: ISourceFix[]
   saveType: (type: ts.Type) => string
   getType: (id: number) => ts.Type
 }
