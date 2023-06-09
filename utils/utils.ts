@@ -177,11 +177,13 @@ export function addLink(links: string[], spacer, property, link?: string, color?
 
 export function isSimpleType(type: ts.Type | ts.TypeFlags) {
   const flags = type['flags'] ? type['flags'] : type
-  return !(
-    flags & ts.TypeFlags.StructuredType ||
-    flags & ts.TypeFlags.Undefined ||
-    flags & ts.TypeFlags.Never ||
-    flags & ts.TypeFlags.Null
+  return (
+    !(
+      flags & ts.TypeFlags.StructuredType ||
+      flags & ts.TypeFlags.Undefined ||
+      flags & ts.TypeFlags.Never ||
+      flags & ts.TypeFlags.Null
+    ) || !!(flags & ts.TypeFlags.Boolean)
   )
 }
 

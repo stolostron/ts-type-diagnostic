@@ -1,7 +1,7 @@
 import chalk from 'chalk'
 import ts from 'typescript'
 import { ErrorType, IPromptFix } from '../types'
-import { getNodeLink, typeToStringLike, getNodePos } from '../utils'
+import { typeToStringLike, getNodePos } from '../utils'
 
 //======================================================================
 //======================================================================
@@ -15,7 +15,7 @@ import { getNodeLink, typeToStringLike, getNodePos } from '../utils'
 //======================================================================
 //======================================================================
 //======================================================================
-export function whenSimpleTypesDontMatch({ stack, context, suggest, promptFixes }) {
+export function whenSimpleTypesDontMatch({ stack, context, promptFixes }) {
   if (context.captured) return
   const { checker, sourceTitle = 'Source', targetTitle = 'Target' } = context
 
@@ -33,11 +33,19 @@ export function whenSimpleTypesDontMatch({ stack, context, suggest, promptFixes 
         if (sourceInfo.type.flags & ts.TypeFlags.Literal) {
           if (sourceInfo.type.flags & ts.TypeFlags.StringLiteral) {
             if (!Number.isNaN(Number(sourceInfo.nodeText.replace(/["']/g, '')))) {
-              suggest(`Remove quotes from ${source}`, sourceInfo.nodeLink)
+              promptFix.choices.push({
+                description: `Convert ${sourceTitle} ${source} to 'number' by removing quotes from ${source}`,
+                ...getNodePos(context, sourceInfo.nodeId),
+                replace: `${sourceInfo.nodeText.replace(/['"]+/g, '')}`,
+              })
+            } else {
+              promptFix.choices.push({
+                description: `Convert ${sourceTitle} ${source} to 'number' with Number(${source})`,
+                ...getNodePos(context, sourceInfo.nodeId),
+                replace: `Number(${sourceInfo.nodeText})`,
+              })
             }
           }
-        } else {
-          suggest(`Convert ${source} to number`, sourceInfo.nodeLink, `Number(${sourceInfo.nodeText})`)
         }
         break
       case !!(targetInfo.type.flags & ts.TypeFlags.StringLike):
@@ -58,21 +66,32 @@ export function whenSimpleTypesDontMatch({ stack, context, suggest, promptFixes 
         }
         break
       case !!(targetInfo.type.flags & ts.TypeFlags.BooleanLike):
-        suggest(
-          `Convert ${source} to boolean`,
-          sourceInfo.nodeLink,
-          `${targetInfo.nodeText} = !!${sourceInfo.nodeText}`
-        )
+        promptFix.choices.push({
+          description: `Convert ${sourceTitle} ${source} to 'boolean' with double exclamation: !!${source}`,
+          ...getNodePos(context, sourceInfo.nodeId),
+          replace: `!!${sourceInfo.nodeText}`,
+        })
         break
     }
+
+    // Union type-- get location of type declaration and replace with a union
     const sourceTypeLike = typeToStringLike(checker, sourceInfo.type)
     const nodeId = context.targetDeclared ? context.targetDeclared.getStart() : targetInfo.nodeId
+    let node = context.cache.startToOutputNode[nodeId]
+    const children = node.parent.getChildren()
+    let beg = node.getEnd()
+    let end = beg
+    if (children[1].kind === ts.SyntaxKind.ColonToken) {
+      beg = children[1].getStart()
+      end = children[2].getEnd()
+    }
     promptFix.choices.push({
       description: `Union ${targetTitle} ${target} with '${sourceTypeLike}' like this ${chalk.green(
         `${targetInfo.fullText} | ${sourceTypeLike}`
       )}`,
-      ...getNodePos(context, nodeId),
-      replace: `${targetInfo.fullText} | ${sourceTypeLike}`,
+      replace: `:${targetInfo.typeText} | ${sourceTypeLike}`,
+      beg,
+      end,
     })
     promptFixes.push(promptFix)
   }
