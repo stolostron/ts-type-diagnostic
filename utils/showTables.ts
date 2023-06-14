@@ -51,11 +51,7 @@ export function showProblemTables(problems, context, stack) {
   //======================================================================
   // FOR TYPE CONFLICTS, TARGET IS ON THE LEFT AND SOURCE IS ON THE RIGHT TO MATCH 'TARGET = SOURCE' CONVENTION
   // FOR FUNCTION CALLS, THE ORDER IS REVERSED TO MATCH FUNC(ARG) ==> CONST FUNC(PARAM) CONVENTION
-  const { code, callMismatch, sourceTitle = 'Source', targetTitle = 'Target', sourceLink, targetDeclared } = context
-  let { targetLink } = context
-  if (context.targetDeclared) {
-    targetLink = getNodeLink(targetDeclared)
-  }
+  const { code, callMismatch, sourceTitle = 'Source', targetTitle = 'Target', sourceLink, targetLink } = context
   const columns: {
     name: string
     minLen?: number
@@ -172,7 +168,7 @@ export function showProblemTables(problems, context, stack) {
       break
   }
 
-  console.log(`TS${code}: ${specs} (${context.nodeId})`)
+  console.log(`TS${code}: ${specs} (${context.problemBeg})`)
 
   // print the table
   p.printTable()

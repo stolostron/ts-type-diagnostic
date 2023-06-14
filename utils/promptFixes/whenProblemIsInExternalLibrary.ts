@@ -1,5 +1,6 @@
 import chalk from 'chalk'
-import { getNodeLink } from '../utils'
+import { getNodeLink, getNodePos } from '../utils'
+import { IPromptFix } from '../types'
 
 // ===============================================================================
 // ===============================================================================
@@ -12,9 +13,14 @@ import { getNodeLink } from '../utils'
 // ===============================================================================
 // ===============================================================================
 // ===============================================================================
-export function whenProblemIsInExternalLibrary({ context, suggest }) {
+export function whenProblemIsInExternalLibrary({ context, stack, promptFixes }) {
   if (context.captured) return
   if (context?.externalLinks?.length) {
+    const promptFix: IPromptFix = {
+      prompt: 'Fix this mismatch?',
+      choices: [],
+    }
+
     const libs = new Set()
     context.externalLinks.forEach((link) => {
       const linkArr = link.split('node_modules/')[1].split('/')
@@ -25,14 +31,21 @@ export function whenProblemIsInExternalLibrary({ context, suggest }) {
       libs.add(link)
     })
     const externalLibs = `'${Array.from(libs).join(', ')}'`
-    suggest(
-      `Problem is in an external library ${chalk.green(externalLibs)}. Ignore the error`,
-      getNodeLink(context.errorNode),
-      [
-        '// eslint-disable-next-line @typescript-eslint/ban-ts-comment',
-        `// @ts-expect-error: Fix required in ${externalLibs}`,
-      ]
-    )
-    context.captured = false // TODO isVerbose
+    const comment = [
+      '// eslint-disable-next-line @typescript-eslint/ban-ts-comment\n',
+      `// @ts-expect-error: Fix required in ${externalLibs}\n`,
+    ]
+
+    const layer = stack[0]
+    const { sourceInfo, targetInfo } = layer
+    const beg = getNodePos(context, targetInfo.nodeId).beg
+    promptFix.choices.push({
+      description: `Disable the error with a comment. Problem is in an external library ${chalk.green(externalLibs)}.`,
+      beg,
+      end: beg,
+      replace: comment.join(''),
+    })
+    promptFixes.push(promptFix)
+    context.captured = true
   }
 }

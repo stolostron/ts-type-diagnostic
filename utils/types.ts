@@ -30,6 +30,17 @@ export enum ErrorType {
   tooFewArgs = 15,
 }
 
+export interface IProblemCache {
+  code: number
+  node: ts.Node
+  problemBeg: number
+  errorNode?: ts.Node
+  arrayItems?: ts.Node[]
+  cache: any
+  objectDeclaration: any
+  problems: { problems: any[]; stack: any[]; context: any }[]
+}
+
 export interface IPlaceholder {
   isPlaceholder?: boolean
 }
@@ -47,6 +58,7 @@ export interface INodeInfo extends ITypeInfo {
   nodeText?: string
   fullText?: string
   nodeLink?: string
+  declaredId?: string
 }
 
 export interface IProblem {
@@ -95,17 +107,21 @@ export interface IPromptFix {
   choices: ISourceFix[]
 }
 
-export interface ICache {
+export interface IFileCache {
+  sourceFile: ts.SourceFile
   startToNode: Map<number, ts.Node>
   kindToNodes: Map<ts.SyntaxKind, any[]>
   returnToContainer: any
   arrayItemsToTarget: any
   containerToReturns: any
   blocksToDeclarations: any
+  nodeIdToNode: any
+  saveNode: (node: ts.Node) => string
+  getNode: (id: string) => ts.Node
   typeIdToType: any
-  outputFile?: ts.Node
-  startToOutputNode: Map<number, { pos: number; end: number }>
-  sourceFixes: ISourceFix[]
   saveType: (type: ts.Type) => string
   getType: (id: number) => ts.Type
+  outputFileString?: string
+  startToOutputNode: Map<number, { pos: number; end: number }>
+  sourceFixes: ISourceFix[]
 }

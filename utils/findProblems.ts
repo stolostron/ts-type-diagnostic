@@ -4,17 +4,17 @@ import ts from 'typescript'
 
 import {
   getFullName,
-  getNodeDeclaration,
   getNodeLink,
   getText,
   getTypeLink,
   isArrayType,
   isFunctionLikeKind,
-  isStructuredType,
   typeToString,
   typeToStringLike,
 } from './utils'
 import { compareTypes, compareWithPlaceholder, getPlaceholderStack } from './compareTypes'
+import { IProblemCache } from './types'
+import { getNodeDeclaration } from './cacheFile'
 
 //======================================================================
 //======================================================================
@@ -29,22 +29,12 @@ import { compareTypes, compareWithPlaceholder, getPlaceholderStack } from './com
 //======================================================================
 //======================================================================
 // ERROR JUST SAYS THERE'S A CONFLICT, BUT NOT WHAT TYPES ARE IN CONFLICT
-export function findProblems(programContext, code, errorNode: ts.Node, node: ts.Node, nodeId, cache) {
-  const context: {
-    code: any
-    node: ts.Node
-    nodeId: number
-    errorNode?: ts.Node
-    arrayItems?: ts.Node[]
-    cache: any
-    sourceDeclared?: ts.Node
-    targetDeclared?: ts.Node
-    problems: { problems: any[]; stack: any[]; context: any }[]
-  } = {
+export function findProblems(programContext, code, errorNode: ts.Node, node: ts.Node, problemBeg, cache) {
+  const context: IProblemCache = {
     ...programContext,
     code,
     node,
-    nodeId,
+    problemBeg,
     errorNode,
     cache,
     problems: [],
@@ -67,7 +57,7 @@ export function findProblems(programContext, code, errorNode: ts.Node, node: ts.
       if (children[0].kind === ts.SyntaxKind.PropertyAccessExpression) {
         const objectName = children[0].getFirstToken()
         if (objectName) {
-          context.targetDeclared = getNodeDeclaration(objectName, cache)
+          context.objectDeclaration = getNodeDeclaration(objectName, context)
         }
       }
       findFunctionCallTargetAndSourceToCompare(node, errorNode, context)
@@ -130,13 +120,15 @@ function createPropertyAccessTargetAndSourceToCompare(targetNode: ts.Node, sourc
   const { checker } = context
   const targetType: ts.Type = checker.getTypeAtLocation(targetNode)
   const targetTypeText = typeToString(checker, targetType)
+  const targetDeclaration = getNodeDeclaration(targetNode, context)
   const targetInfo = {
     nodeText: getText(targetNode),
     typeText: targetTypeText,
-    typeId: context.cache.saveType(targetType),
     fullText: getFullName(targetNode, targetTypeText),
     nodeLink: getNodeLink(targetNode),
-    nodeId: targetNode.getStart(),
+    typeId: context.cache.saveType(targetType),
+    nodeId: context.cache.saveNode(targetDeclaration),
+    declaredId: context.cache.saveNode(targetDeclaration),
   }
 
   // try to get the type of the accessor using the original expression (a = b)
@@ -166,7 +158,6 @@ function createPropertyAccessTargetAndSourceToCompare(targetNode: ts.Node, sourc
     targetNode,
     sourceLink: placeholderInfo.nodeLink,
     targetLink: targetInfo.nodeLink,
-    targetDeclared: getNodeDeclaration(targetNode, context.cache),
     targetTitle: 'Object',
     sourceTitle: 'Property',
     missingAccess: true,
@@ -193,13 +184,15 @@ function findAssignmentTargetAndSourceToCompare(targetNode: ts.Node, sourceNode:
   const { checker } = context
   const targetType: ts.Type = checker.getTypeAtLocation(targetNode)
   const targetTypeText = typeToString(checker, targetType)
+  const targetDeclaration = getNodeDeclaration(targetNode, context)
   const targetInfo = {
     nodeText: getText(targetNode),
     typeText: targetTypeText,
-    typeId: context.cache.saveType(targetType),
     fullText: getFullName(targetNode, targetTypeText),
-    nodeLink: getNodeLink(targetNode),
-    nodeId: targetNode.getStart(),
+    nodeLink: getNodeLink(targetDeclaration),
+    typeId: context.cache.saveType(targetType),
+    nodeId: context.cache.saveNode(targetNode),
+    declaredId: context.cache.saveNode(targetDeclaration),
   }
   let sourceType: ts.Type = checker.getTypeAtLocation(sourceNode)
 
@@ -254,12 +247,14 @@ function findAssignmentTargetAndSourceToCompare(targetNode: ts.Node, sourceNode:
     ) {
       const targetType: ts.Type = mapType
       const targetTypeText = typeToString(checker, targetType)
+      const targetDeclaration = getNodeDeclaration(targetNode, context)
       const targetInfo = {
         nodeText: targetTypeText,
         typeText: targetTypeText,
         typeId: context.cache.saveType(targetType),
         fullText: getFullName(targetTypeText, targetTypeText),
         nodeLink: getTypeLink(targetType),
+        declaredId: context.cache.saveNode(targetDeclaration),
       }
 
       // ex: [key: string]: string
@@ -278,7 +273,6 @@ function findAssignmentTargetAndSourceToCompare(targetNode: ts.Node, sourceNode:
         ...context,
         sourceNode,
         targetNode,
-        targetDeclared: getNodeDeclaration(targetNode, context.cache),
         sourceLink: placeholderInfo.nodeLink,
         targetLink: targetInfo.nodeLink,
         targetTitle: 'Map',
@@ -296,10 +290,10 @@ function findAssignmentTargetAndSourceToCompare(targetNode: ts.Node, sourceNode:
   const sourceInfo = {
     nodeText: getText(sourceNode),
     typeText: sourceTypeText,
-    typeId: context.cache.saveType(sourceType),
     fullText: getFullName(sourceNode, sourceTypeText),
     nodeLink: getNodeLink(sourceNode),
-    nodeId: sourceNode.getStart(),
+    typeId: context.cache.saveType(sourceType),
+    nodeId: context.cache.saveNode(sourceNode),
   }
 
   // individual array items mismatch the target
@@ -308,8 +302,7 @@ function findAssignmentTargetAndSourceToCompare(targetNode: ts.Node, sourceNode:
     sourceNode,
     targetNode,
     sourceLink: getNodeLink(sourceNode),
-    targetLink: getNodeLink(targetNode),
-    targetDeclared: getNodeDeclaration(targetNode, context.cache),
+    targetLink: targetInfo.nodeLink,
   }
   compareTypes(targetType, sourceType, getPlaceholderStack(targetInfo, sourceInfo, pathContext), pathContext)
   return pathContext.problems.length > 0
@@ -344,13 +337,13 @@ function findReturnStatementTargetAndSourceToCompare(node: ts.Node, containerTyp
     const targetInfo = {
       nodeText: container.parent?.symbol?.getName(),
       typeText: targetTypeText,
-      typeId: context.cache.saveType(targetType),
       fullText: getFullName(
         container.parent.kind !== ts.SyntaxKind.SourceFile ? `${container.parent?.symbol?.getName()}: ` : '',
         targetTypeText
       ),
       nodeLink: getNodeLink(container),
-      nodeId: container.getStart(),
+      typeId: context.cache.saveType(targetType),
+      nodeId: context.cache.saveNode(container),
     }
 
     const arrayItems = context.cache.arrayItemsToTarget[node.getStart()]
@@ -360,10 +353,10 @@ function findReturnStatementTargetAndSourceToCompare(node: ts.Node, containerTyp
       const sourceInfo = {
         nodeText: getText(node),
         typeText: sourceTypeText.replace('return ', ''),
-        typeId: context.cache.saveType(sourceType),
         fullText: getText(node),
         nodeLink: getNodeLink(node),
-        nodeId: node.getStart(),
+        typeId: context.cache.saveType(sourceType),
+        nodeId: context.cache.saveNode(node),
       }
       const pathContext = {
         ...context,
@@ -409,6 +402,11 @@ function findFunctionCallTargetAndSourceToCompare(node: ts.Node, errorNode, cont
   let tooManyArguments = false
   let tooFewArguments = false
   const type = checker.getTypeAtLocation(children[0])
+  const declarations = type.getSymbol()?.getDeclarations()
+  if (declarations) {
+    context.functionDeclared = declarations[0]
+  }
+  context.functionName = children[0].getText()
   const signature = checker.getSignaturesOfType(type, 0)[0]
   if (signature) {
     // create calling pairs
@@ -427,11 +425,11 @@ function findFunctionCallTargetAndSourceToCompare(node: ts.Node, errorNode, cont
           name,
           type,
           typeText,
-          typeId: context.cache.saveType(type),
           fullText: getFullName(name, typeText),
           nodeText: name,
           nodeLink: getNodeLink(node),
-          nodeId: arg.getStart(),
+          typeId: context.cache.saveType(type),
+          nodeId: context.cache.saveNode(arg),
         }
       }
       if (inx < params.length) {
@@ -461,11 +459,11 @@ function findFunctionCallTargetAndSourceToCompare(node: ts.Node, errorNode, cont
           name,
           type,
           typeText,
-          typeId: context.cache.saveType(type),
           fullText: getFullName(name, typeText),
           nodeText: name,
           nodeLink: getNodeLink(param.valueDeclaration),
-          nodeId: param.valueDeclaration.getStart(),
+          typeId: context.cache.saveType(type),
+          nodeId: context.cache.saveNode(param.valueDeclaration),
           isOpt,
         }
       }
@@ -483,7 +481,6 @@ function findFunctionCallTargetAndSourceToCompare(node: ts.Node, errorNode, cont
     callingPairs.some(({ sourceInfo, targetInfo }, inx) => {
       // number of arguments mismatch
       if (tooManyArguments || tooFewArguments) {
-        const func = getNodeDeclaration(children[0], context.cache)
         const pathContext = {
           ...context,
           callingPairs,
@@ -492,7 +489,7 @@ function findFunctionCallTargetAndSourceToCompare(node: ts.Node, errorNode, cont
           tooFewArguments,
           tooManyArguments,
           sourceLink: getNodeLink(node),
-          targetLink: getNodeLink(func),
+          targetLink: getNodeLink(context.functionDeclared),
           sourceTitle: 'Caller',
           targetTitle: 'Callee',
         }
@@ -612,10 +609,10 @@ function findArrayItemTargetAndSourceToCompare(arrayItems, targetType, targetInf
           sourceInfo: {
             nodeText: getText(sourceNode),
             typeText: sourceTypeText,
-            typeId: context.cache.saveType(sourceType),
             fullText: getFullName(sourceNode, sourceTypeText),
             nodeLink: getNodeLink(sourceNode),
-            nodeId: sourceNode.getStart(),
+            typeId: context.cache.saveType(sourceType),
+            nodeId: context.cache.saveNode(sourceNode),
           },
           targetInfo,
         },

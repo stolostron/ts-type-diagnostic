@@ -14,7 +14,7 @@ import { isStructuredType } from '../utils'
 // ===============================================================================
 // ===============================================================================
 export function whenTypeShapesDontMatch(context) {
-  if (context.captured) return
+  if (context.context.captured) return
   const layer = context.stack[context.stack.length - 1]
   const { sourceInfo, targetInfo } = layer
   if (!isStructuredType(sourceInfo.type) && !isStructuredType(targetInfo.type)) return

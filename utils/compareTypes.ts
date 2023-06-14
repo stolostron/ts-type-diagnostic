@@ -7,7 +7,6 @@ import {
   filterProblems,
   findParentExpression,
   getFullName,
-  getNodeDeclaration,
   getPropText,
   getPropertyInfo,
   getTypeLink,
@@ -19,6 +18,7 @@ import {
   mergeShapeProblems,
   typeToString,
 } from './utils'
+import { getNodeDeclaration } from './cacheFile'
 
 //======================================================================
 //======================================================================
@@ -360,10 +360,8 @@ export function compareWithPlaceholder(targetInfo, placeholderInfo, context) {
 // pad the stack so that inner properties line up
 export function getPlaceholderStack(targetInfo, sourceInfo, context) {
   const { checker } = context
-  const sourceNode = context.sourceNode
   const targetNode = context.targetNode
-  context.sourceDeclared = getNodeDeclaration(sourceNode, context.cache)
-  let targetDeclared = getNodeDeclaration(targetNode, context.cache)
+  let targetDeclared = getNodeDeclaration(targetNode, context)
   let stack: { targetInfo: INodeInfo; sourceInfo: INodeInfo | IPlaceholderInfo }[] = []
   let nodeText = targetNode.getText()
   let path = nodeText.split(/\W+/)
@@ -399,11 +397,6 @@ export function getPlaceholderStack(targetInfo, sourceInfo, context) {
         return false
       })
 
-      // problem prop
-      if (stack.length === 0) {
-        context.targetDeclared = node
-      }
-
       // add filler layer
       nodeText = path.shift()
       const typeText = typeToString(checker, type)
@@ -415,6 +408,7 @@ export function getPlaceholderStack(targetInfo, sourceInfo, context) {
           nodeText,
           typeText,
           typeId: context.cache.saveType(type),
+          declaredId: context.cache.saveNode(node),
           fullText: getFullName(nodeText, typeText),
           nodeLink: getTypeLink(type),
         },

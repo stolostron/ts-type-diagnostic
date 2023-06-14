@@ -280,19 +280,6 @@ export function getNodeLink(node: ts.Node | undefined) {
   return ''
 }
 
-export function getNodeBlockId(node: ts.Node) {
-  const block = ts.findAncestor(node.parent, (node) => {
-    return !!node && node.kind === ts.SyntaxKind.Block
-  })
-  return block ? block.getStart() : 0
-}
-
-export function getNodeDeclaration(node: ts.Node | ts.Identifier, cache) {
-  const declarationMap = cache.blocksToDeclarations[getNodeBlockId(node)]
-  const varName = node.getText()
-  return declarationMap && varName && declarationMap[varName] ? declarationMap[varName] : node
-}
-
 export function mergeShapeProblems(s2tProblem: IShapeProblem, t2sProblem: IShapeProblem): IShapeProblem {
   const problem: IShapeProblem = {
     matched: s2tProblem?.matched || [], //always the same
@@ -384,4 +371,20 @@ export function isFunctionLikeKind(kind: ts.SyntaxKind) {
     default:
       return false
   }
+}
+
+export function getClosestTarget(checker, errorNode: ts.Node) {
+  const errorType = checker.getTypeAtLocation(errorNode)
+  return (
+    ts.findAncestor(errorNode, (node) => {
+      return (
+        !!node &&
+        (node.kind === ts.SyntaxKind.ReturnStatement ||
+          node.kind === ts.SyntaxKind.VariableDeclaration ||
+          node.kind === ts.SyntaxKind.ExpressionStatement ||
+          (node.kind === ts.SyntaxKind.PropertyAccessExpression && !!(errorType.flags & ts.TypeFlags.Any)) ||
+          node.kind === ts.SyntaxKind.CallExpression)
+      )
+    }) || errorNode
+  )
 }
