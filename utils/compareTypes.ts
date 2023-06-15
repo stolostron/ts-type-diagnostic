@@ -348,6 +348,8 @@ export function compareWithPlaceholder(targetInfo, placeholderInfo, context) {
       },
     ]
   }
+  context.targetLink = stack[0].targetInfo.nodeLink
+
   const problems = [
     {
       sourceInfo: placeholderInfo,

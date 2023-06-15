@@ -271,9 +271,12 @@ export function findParentExpression(expression) {
 export function getNodeLink(node: ts.Node | undefined) {
   if (node) {
     const file = node.getSourceFile()
-    let relative: string = path.relative(process.argv[1], file.fileName)
+    let relative: string = file.fileName.split(global.homedir).join('~')
     if (!relative.includes('node_modules/')) {
-      relative = relative.split('/').slice(-4).join('/')
+      relative = path.relative(global.rootPath || process.argv[1], file.fileName)
+      let arr: string[] = relative.split('/')
+      if (arr[0] === '..') arr.shift()
+      relative = arr.slice(-4).join('/')
     }
     return `${relative}:${file.getLineAndCharacterOfPosition(node.getStart()).line + 1}`
   }

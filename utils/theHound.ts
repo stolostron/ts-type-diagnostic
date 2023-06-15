@@ -7,14 +7,15 @@ import { getClosestTarget, getNodeLink } from './utils'
 import { showProblemTables, showTableNotes } from './showTables'
 import { applyFixes, showPromptFixes } from './promptFixes/showFixes'
 import { cacheFile } from './cacheFile'
-import { IFileCache } from './types'
+import os from 'os'
+import './globals'
 
-let options: ts.CompilerOptions = {
+global.options = {
   target: ts.ScriptTarget.ES5,
   module: ts.ModuleKind.CommonJS,
 }
+global.isVerbose = false
 let checker: ts.TypeChecker
-let isVerbose = false
 
 // errors we ignore
 const ignoreTheseErrors = [6133, 2304, 2448, 2454]
@@ -38,14 +39,12 @@ export function startSniffing(fileNames: string | any[] | readonly string[], ver
     const tsconfigPath = ts.findConfigFile(fileNames[0], ts.sys.fileExists, 'tsconfig.json')
     if (tsconfigPath) {
       const tsconfigFile = ts.readConfigFile(tsconfigPath, ts.sys.readFile)
-      options = ts.parseJsonConfigFileContent(tsconfigFile.config, ts.sys, path.dirname(tsconfigPath)).options
-    } else {
-      options = {
-        target: ts.ScriptTarget.ES5,
-        module: ts.ModuleKind.CommonJS,
-      }
+      global.options = ts.parseJsonConfigFileContent(tsconfigFile.config, ts.sys, path.dirname(tsconfigPath)).options
+      global.rootPath = tsconfigPath
     }
-    isVerbose = verbose
+    global.isVerbose = verbose
+    global.homedir = os.homedir()
+
     //options.isolatedModules = false
     console.log('starting...')
     const program = ts.createProgram(fileNames, options)
@@ -82,10 +81,8 @@ async function startFixing(semanticDiagnostics: readonly ts.Diagnostic[], fileNa
   console.log('\n\n')
 
   const programContext = {
-    fileCache,
-    options,
     checker,
-    isVerbose,
+    fileCache,
   }
 
   let allProblems: { problems: any[]; stack: any[]; context: any }[] = []

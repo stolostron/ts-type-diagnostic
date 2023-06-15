@@ -39,7 +39,7 @@ export async function showPromptFixes(problems, context, stack) {
     addChoice: addChoice.bind(null, context, promptFixes),
   }
   whenCallArgumentsDontMatch(whenContext)
-  whenSimpleTypesDontMatch(whenContext)
+  //whenSimpleTypesDontMatch(whenContext)
   whenTypeShapesDontMatch(whenContext)
   whenArraysDontMatch(whenContext)
   whenUndefinedTypeDoesntMatch(whenContext)
@@ -119,6 +119,7 @@ async function chooseFixes(promptFixes, context) {
       } else if (pick.fix !== 'No') {
         const fix = choices.find((choice) => choice.description === pick.fix)
         if (fix) {
+          fix.description = `${chalk.white(prompt)}: ${fix.description}`
           context.fileCache[fix.fileName].sourceFixes.push(fix)
         }
       }
@@ -157,7 +158,7 @@ export async function applyFixes(fileCache) {
 
 async function shouldApplyFixes(fileName, sourceFixes) {
   if (!sourceFixes.length) return false
-  console.log(`Save fixes for ${chalk.cyanBright(fileName)}?`)
+  console.log(`\n\nSave fixes for ${chalk.cyanBright(fileName)}?`)
   sourceFixes.forEach((fix: { description: string }) => console.log(` ${fix.description}`))
   const questions = [
     {

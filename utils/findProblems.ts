@@ -302,9 +302,10 @@ function findAssignmentTargetAndSourceToCompare(targetNode: ts.Node, sourceNode:
     sourceNode,
     targetNode,
     sourceLink: getNodeLink(sourceNode),
-    targetLink: targetInfo.nodeLink,
   }
-  compareTypes(targetType, sourceType, getPlaceholderStack(targetInfo, sourceInfo, pathContext), pathContext)
+  const stack = getPlaceholderStack(targetInfo, sourceInfo, pathContext)
+  pathContext.targetLink = stack[0].targetInfo.nodeLink
+  compareTypes(targetType, sourceType, stack, pathContext)
   return pathContext.problems.length > 0
 }
 
@@ -321,7 +322,7 @@ function findAssignmentTargetAndSourceToCompare(targetNode: ts.Node, sourceNode:
 //======================================================================
 
 function findReturnStatementTargetAndSourceToCompare(node: ts.Node, containerType: ts.Type | undefined, context) {
-  const { checker, options } = context
+  const { checker } = context
   const children = node.getChildren()
   // source is return type
   const sourceType: ts.Type = checker.getTypeAtLocation(children[1])
@@ -376,7 +377,7 @@ function findReturnStatementTargetAndSourceToCompare(node: ts.Node, containerTyp
           },
         ],
         pathContext,
-        options.strictFunctionTypes
+        global.options.strictFunctionTypes
       )
       return pathContext.problems.length > 0
     }

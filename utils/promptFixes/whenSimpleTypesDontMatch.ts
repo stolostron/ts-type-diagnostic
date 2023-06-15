@@ -21,10 +21,10 @@ export function whenSimpleTypesDontMatch({ stack, context, addChoice, sourceName
   const layer = stack[stack.length - 1]
   const { sourceInfo, targetInfo } = layer
   if (context.errorType === ErrorType.mismatch) {
-    const suffix = functionName ? `in function ${functionName}(): ` : ''
-    addChoice = addChoice.bind(null, `Fix this mismatch ${suffix}?`)
+    const suffix = functionName ? ` in function ${functionName}()` : ''
     const source = chalk.green(sourceInfo.nodeText)
     const target = chalk.green(targetInfo.nodeText)
+    addChoice = addChoice.bind(null, `Fix ${targetName} ${target} type !== ${sourceName} ${source} type${suffix}?`)
     switch (true) {
       case !!(targetInfo.type.flags & ts.TypeFlags.NumberLike):
         if (sourceInfo.type.flags & ts.TypeFlags.Literal) {

@@ -275,7 +275,7 @@ function showCallingArgumentConflicts(p, problems, context, stack): ErrorType {
 //======================================================================
 
 function showConflicts(p, problems: (ITypeProblem | IShapeProblem)[], context, stack, arg?): ErrorType {
-  const { checker, isVerbose } = context
+  const { checker } = context
   // display the path we took to get here
   let spacer = ''
   // let lastTargetType
@@ -454,7 +454,7 @@ function showConflicts(p, problems: (ITypeProblem | IShapeProblem)[], context, s
       arr.forEach((propName) => {
         let targetText = targetMap[propName].fullText
         let sourceText = sourceMap[propName].fullText
-        if (inx === 0 && targetText.split('|').length > 1 && !isVerbose) {
+        if (inx === 0 && targetText.split('|').length > 1 && !global.isVerbose) {
           targetText = `${propName}: ${sourceMap[propName].typeText} | ... ${addNote(maxs, targetText)}`
         }
         if (inx === 1) {
@@ -569,7 +569,7 @@ function showConflicts(p, problems: (ITypeProblem | IShapeProblem)[], context, s
               context.externalLinks.push(targetMap[target].nodeLink)
             }
             if (
-              isVerbose &&
+              global.isVerbose &&
               !showingMultipleProblems &&
               targetMap[target].altParentInfo &&
               targetMap[target].altParentInfo.fullText !== lastTargetParent
@@ -601,7 +601,7 @@ function showConflicts(p, problems: (ITypeProblem | IShapeProblem)[], context, s
               context.externalLinks.push(sourceMap[source].nodeLink)
             }
             if (
-              isVerbose &&
+              global.isVerbose &&
               !showingMultipleProblems &&
               sourceMap[source].altParentInfo &&
               sourceMap[source].altParentInfo.fullText !== lastSourceParent
@@ -675,10 +675,9 @@ function showConflicts(p, problems: (ITypeProblem | IShapeProblem)[], context, s
 // ===============================================================================
 
 export function showTableNotes(problems, context) {
-  const { isVerbose } = context
   const { hadSuggestions, notes } = context
   const { maxs, links, interfaces } = notes
-  if (isVerbose) {
+  if (global.isVerbose) {
     if (problems[0].unchecked && problems[0].unchecked.length) {
       console.log(`( ${chalk.cyan(problems[0].unchecked.join(', '))} cannot be checked until problems are resolved )`)
     }
@@ -688,11 +687,11 @@ export function showTableNotes(problems, context) {
   }
 
   // print the table notes:
-  if (!hadSuggestions || isVerbose) {
+  if (!hadSuggestions || global.isVerbose) {
     links.forEach((link) => console.log(link))
   }
 
-  if (isVerbose) {
+  if (global.isVerbose) {
     maxs.forEach((max) => console.log(max))
     interfaces.forEach((inter) => console.log(inter))
   }
