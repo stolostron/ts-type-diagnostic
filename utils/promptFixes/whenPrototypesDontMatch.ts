@@ -19,6 +19,7 @@ export function whenPrototypesDontMatch({ suggest, context, stack }) {
 
   const layer = stack[stack.length - 1]
   const { sourceInfo, targetInfo } = layer
+  if (sourceInfo.isPlaceholder) return
   const isTargetFunction = isFunctionType(checker, targetInfo.type)
   const isSourceFunction = isFunctionType(checker, sourceInfo.type)
   if (isTargetFunction || isSourceFunction) {

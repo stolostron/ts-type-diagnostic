@@ -214,9 +214,6 @@ function findAssignmentTargetAndSourceToCompare(targetNode: ts.Node, sourceNode:
     if (returns) {
       let hadProblem = false
       returns.forEach((rn) => {
-        if (hadProblem) {
-          console.log('\n\n')
-        }
         findReturnStatementTargetAndSourceToCompare(rn, targetType, context)
         hadProblem = context.problems.length > 0
       })

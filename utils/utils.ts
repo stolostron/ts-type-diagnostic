@@ -4,19 +4,18 @@ import chalk from 'chalk'
 import { IShapeProblem, ITypeProblem, MAX_COLUMN_WIDTH } from './types'
 import path from 'path'
 
-export function getPropertyInfo(prop: ts.Symbol, context, type?: ts.Type, missLike?: string[], pseudo?: boolean) {
+export function getPropertyInfo(prop: ts.Symbol, context, type?: ts.Type, pseudo?: boolean) {
   const { checker } = context
   const declarations = prop?.declarations
   if (Array.isArray(declarations)) {
-    const declaration = declarations[0]
-    let typeText
     let fullText
+    const declaration = declarations[0]
     type = type || checker.getTypeAtLocation(declaration)
+    let typeText = typeToString(checker, type!)
     const isOpt = !!(prop.flags & ts.SymbolFlags.Optional)
     const isFunc = isFunctionType(checker, type!)
     const propName = prop.getName()
     if (pseudo) {
-      typeText = typeToString(checker, type!)
       let preface = `${propName}${isOpt ? '?' : ''}:`
       switch (true) {
         case !!(prop.flags & ts.SymbolFlags.Interface):
@@ -32,13 +31,15 @@ export function getPropertyInfo(prop: ts.Symbol, context, type?: ts.Type, missLi
       fullText = `${preface} ${typeText}`
     } else {
       fullText = getText(declaration)
-      // if a like prop, show true type (so that stringliteral isn't confused with string, etc)
-      if (missLike?.includes(propName)) {
-        fullText += ` is a ${ts.TypeFlags[type!.flags]}`
+      const declaredType = fullText.split(':').pop()?.trim()
+      if (type && type['intrinsicName'] && declaredType !== typeText) {
+        fullText += ` as ${typeText}`
       }
-      typeText = fullText.split(':').pop()?.trim() || typeText
+      if (type!.flags & ts.TypeFlags.Literal) {
+        fullText += ` as ${ts.TypeFlags[type!.flags]}`
+      }
+      typeText = declaredType || typeText
     }
-    const nodeLink = getNodeLink(declaration)
     return {
       nodeText: propName,
       typeText,
@@ -46,14 +47,15 @@ export function getPropertyInfo(prop: ts.Symbol, context, type?: ts.Type, missLi
       isFunc,
       fullText,
       typeId: context.cache.saveType(type),
-      nodeLink,
+      nodeId: context.cache.saveType(declaration),
+      nodeLink: getNodeLink(declaration),
       declaration,
     }
   }
   return { typeText: '', fullText: '', nodeLink: '' }
 }
 
-export function getTypeMap(checker: ts.TypeChecker, type: ts.Type, context, missLike: string[]) {
+export function getTypeMap(checker: ts.TypeChecker, type: ts.Type, context) {
   if (!type) return
   if ((type as any).placeholderInfo) return (type as any).placeholderInfo
   const map = {}
@@ -64,16 +66,15 @@ export function getTypeMap(checker: ts.TypeChecker, type: ts.Type, context, miss
     const { nodeText, fullText, isOpt, isFunc, nodeLink, typeText, typeId, declaration } = getPropertyInfo(
       prop,
       context,
-      undefined,
-      missLike
+      undefined
     )
 
     // see if type symbol was added thru another declaration
-    const parentInfo = type.symbol ? getPropertyInfo(type.symbol, context, undefined, missLike, true) : undefined
+    const parentInfo = type.symbol ? getPropertyInfo(type.symbol, context, undefined, true) : undefined
     let altParentInfo: { fullText: string; nodeLink?: string } | undefined = undefined
     if (parentInfo && declaration?.parent) {
       const altParentType = checker.getTypeAtLocation(declaration?.parent)
-      const otherInfo = getPropertyInfo(altParentType.symbol, context, undefined, missLike, true)
+      const otherInfo = getPropertyInfo(altParentType.symbol, context, undefined, true)
       altParentInfo = otherInfo.nodeLink !== parentInfo.nodeLink ? otherInfo : undefined
     }
     info = {
@@ -93,13 +94,17 @@ export function getTypeMap(checker: ts.TypeChecker, type: ts.Type, context, miss
 }
 
 export function getFullName(name: ts.Node | string | undefined, type: string | undefined): string {
-  let isLiteral = false
   if (name && typeof name !== 'string') {
-    //const kindType = ts.SyntaxKind[name.kind]
-    isLiteral = name.kind >= ts.SyntaxKind.FirstLiteralToken && name.kind <= ts.SyntaxKind.LastLiteralToken
+    if (name.kind >= ts.SyntaxKind.FirstLiteralToken && name.kind <= ts.SyntaxKind.LastLiteralToken) {
+      type = name.kind === ts.SyntaxKind.FirstLiteralToken ? 'NumericLiteral' : ts.SyntaxKind[name.kind]
+      return `${getText(name)} as ${type}`
+    }
     name = getText(name)
   }
-  if (isLiteral || name === type || !name || !type) {
+  if (type === 'true' || type === 'false') {
+    return `${name} as boolean`
+  }
+  if (name === type || !name || !type) {
     if (name && typeof name === 'string') return name
     if (type && typeof type === 'string') return type
   }
@@ -347,11 +352,6 @@ export function filterProblems(typeProblem: ITypeProblem | undefined, shapeProbl
     problems = [typeProblem]
   }
   return problems
-}
-
-export function getNodePos(context, nodeId) {
-  const node = context.cache.startToOutputNode[nodeId]
-  return { beg: node.getStart(), end: node.getEnd() }
 }
 
 export function isFunctionLikeKind(kind: ts.SyntaxKind) {

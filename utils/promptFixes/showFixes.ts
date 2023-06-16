@@ -10,7 +10,7 @@ import { whenUndefinedTypeDoesntMatch } from './whenUndefinedTypeDoesntMatch'
 import { whenNeverType } from './whenNeverType'
 import { whenPrototypesDontMatch } from './whenPrototypesDontMatch'
 import { whenTypeShapesDontMatch } from './whenTypeShapesDontMatch'
-import { IPromptFix } from '../types'
+import { ErrorType, IPromptFix } from '../types'
 import { cacheFile, saveOutput } from '../cacheFile'
 
 //======================================================================
@@ -40,11 +40,17 @@ export async function showPromptFixes(problems, context, stack) {
   }
   whenCallArgumentsDontMatch(whenContext)
   //whenSimpleTypesDontMatch(whenContext)
-  whenTypeShapesDontMatch(whenContext)
+  whenPrototypesDontMatch(whenContext)
   whenArraysDontMatch(whenContext)
+  context.captured =
+    context.errorType === ErrorType.mismatch ||
+    context.errorType === ErrorType.tooManyArgs ||
+    context.errorType === ErrorType.tooFewArgs ||
+    context.errorType === ErrorType.arrayToNonArray ||
+    context.errorType === ErrorType.nonArrayToArray
+  whenTypeShapesDontMatch(whenContext)
   whenUndefinedTypeDoesntMatch(whenContext)
   whenNeverType(whenContext)
-  whenPrototypesDontMatch(whenContext)
   return await chooseFixes(promptFixes, context)
 }
 

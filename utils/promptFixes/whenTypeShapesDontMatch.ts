@@ -1,5 +1,5 @@
 import chalk from 'chalk'
-import { isStructuredType } from '../utils'
+import { isStructuredType, isFunctionType } from '../utils'
 
 // ===============================================================================
 // ===============================================================================
@@ -13,19 +13,45 @@ import { isStructuredType } from '../utils'
 // ===============================================================================
 // ===============================================================================
 // ===============================================================================
-export function whenTypeShapesDontMatch(context) {
-  if (context.context.captured) return
-  const layer = context.stack[context.stack.length - 1]
+export function whenTypeShapesDontMatch({ problems, stack, context, addChoice, sourceName, targetName }) {
+  if (context.captured || !problems.length) return
+  const { checker, cache, sourceMap, targetMap } = context
+  const layer = stack[0]
   const { sourceInfo, targetInfo } = layer
-  if (!isStructuredType(sourceInfo.type) && !isStructuredType(targetInfo.type)) return
+  targetInfo.type = cache.getType(targetInfo?.typeId)
+  if (!isStructuredType(targetInfo.type) && !isFunctionType(checker, targetInfo.type)) return
+  const declarationz = targetInfo.type.getSymbol()?.getDeclarations()
 
-  // some shape suggestions
-  didYouMeanThisChildProperty(context)
-  suggestPartialInterfaces(context)
+  if (sourceInfo.isPlaceholder) {
+    const r = 0
+  } else {
+    sourceInfo.type = cache.getType(sourceInfo?.typeId)
+    if (isStructuredType(sourceInfo.type)) {
+      const declarations = sourceInfo.type.getSymbol()?.getDeclarations()
+
+      const sdf = declarations[0].getText()
+      const problem = problems[0]
+      const g = 0
+    }
+  }
+
+  // addChoice(sourceInfo, targetInfo, (outputNode: ts.Node) => {
+  //   return {
+  //     description: `Convert type of ${sourceName} '${source}' to 'number' by removing quotes from ${source}`,
+  //     replace: `${sourceInfo.nodeText.replace(/['"]+/g, '')}`,
+  //     beg: outputNode.getStart(),
+  //     end: outputNode.getEnd(),
+  //   }
+  // })
 }
 // ===============================================================================
 // when you use 'resource', but you should 'resource.resource' instead %-)
 // ===============================================================================
+
+// // some shape suggestions
+// didYouMeanThisChildProperty(context)
+// suggestPartialInterfaces(context)
+
 function didYouMeanThisChildProperty({ suggest, context, stack }) {
   if (context.sourceMap) {
     const layer = stack[stack.length - 1]

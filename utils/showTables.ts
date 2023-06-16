@@ -412,15 +412,15 @@ function showConflicts(p, problems: (ITypeProblem | IShapeProblem)[], context, s
     let sourceMap = {}
     if (isShapeProblem(problem)) {
       targetType = context.cache.getType(problem.targetInfo.typeId)
-      targetMap = context.targetMap = getTypeMap(checker, targetType, context, misslike)
+      targetMap = context.targetMap = getTypeMap(checker, targetType, context)
       sourceType = context.cache.getType(problem.sourceInfo.typeId)
-      sourceMap = context.sourceMap = getTypeMap(checker, sourceType, context, misslike)
+      sourceMap = context.sourceMap = getTypeMap(checker, sourceType, context)
     } else if (sourceInfo.placeholderTargetKey || context.placeholderInfo) {
       const placeholderInfo = sourceInfo.placeholderTargetKey ? sourceInfo : context.placeholderInfo
       const key = placeholderInfo.placeholderTargetKey
       const parentLayer = stack[stack.length - 1]
       targetType = context.cache.getType(parentLayer.targetInfo.typeId)
-      targetMap = context.targetMap = getTypeMap(checker, targetType, context, misslike)
+      targetMap = context.targetMap = getTypeMap(checker, targetType, context)
       sourceMap[key] = placeholderInfo
       const targetProp = targetMap[key]
       reversed.contextual = Object.keys(targetMap).filter((k) => k !== key)

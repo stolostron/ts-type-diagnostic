@@ -108,5 +108,6 @@ export function whenSimpleTypesDontMatch({ stack, context, addChoice, sourceName
         end,
       }
     })
+    context.captured = true
   }
 }
