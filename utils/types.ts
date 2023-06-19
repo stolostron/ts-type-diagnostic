@@ -46,7 +46,10 @@ export interface IPlaceholder {
 }
 export interface IPlaceholderInfo extends IPlaceholder {
   // when comparing with a placeholder (source) what key in target are we comparing
-  placeholderTargetKey?: string
+  placeholderTarget?: {
+    key: string
+    typeId: string
+  }
 }
 
 export interface ITypeInfo extends IPlaceholderInfo {

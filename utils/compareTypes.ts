@@ -348,6 +348,7 @@ export function compareWithPlaceholder(targetInfo, placeholderInfo, context) {
       },
     ]
   }
+  context.placeholderInfo = context.placeholderInfo || placeholderInfo
   context.targetLink = stack[0].targetInfo.nodeLink
 
   const problems = [
@@ -372,15 +373,6 @@ export function getPlaceholderStack(targetInfo, sourceInfo, context) {
     path = path.reverse()
     let propName = (nodeText = path.shift())
 
-    // when comparing with a real variable on sourcw side
-    // remember what target key to compare against
-    if (!sourceInfo.placeholderTargetKey) {
-      context.placeholderInfo = {
-        ...sourceInfo,
-        placeholderTargetKey: nodeText,
-      }
-    }
-
     // 0 = c of a.b.c, now do a.b
     let node: ts.Node = targetNode
     let expression = targetDeclared
@@ -398,6 +390,18 @@ export function getPlaceholderStack(targetInfo, sourceInfo, context) {
         }
         return false
       })
+
+      // when comparing with a real variable on source side
+      // remember what target key to compare against
+      if (!context.placeholderInfo) {
+        context.placeholderInfo = {
+          ...sourceInfo,
+          placeholderTarget: {
+            key: sourceInfo.targetKey || nodeText,
+            typeId: context.cache.saveType(type),
+          },
+        }
+      }
 
       // add filler layer
       nodeText = path.shift()
@@ -421,6 +425,15 @@ export function getPlaceholderStack(targetInfo, sourceInfo, context) {
     stack = stack.reverse()
     return stack
   } else {
+    if (sourceInfo.targetKey) {
+      context.placeholderInfo = {
+        ...sourceInfo,
+        placeholderTarget: {
+          key: sourceInfo.targetKey || nodeText,
+          typeId: targetInfo.typeId,
+        },
+      }
+    }
     return [{ sourceInfo, targetInfo }]
   }
 }

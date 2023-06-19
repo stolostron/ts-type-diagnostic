@@ -149,7 +149,7 @@ function createPropertyAccessTargetAndSourceToCompare(targetNode: ts.Node, sourc
     nodeLink: getNodeLink(sourceNode),
     node: sourceNode,
     fullText: getFullName(nodeText, typeText),
-    placeholderTargetKey: nodeText, //will be missing in target but that's the point
+    targetKey: nodeText,
   }
 
   context = {
@@ -263,7 +263,10 @@ function findAssignmentTargetAndSourceToCompare(targetNode: ts.Node, sourceNode:
         nodeLink: getNodeLink(sourceNode),
         node: sourceNode,
         fullText: getFullName(nodeText, typeText),
-        placeholderTargetKey: nodeText, //will be missing in target but that's the point
+        placeholderTarget: {
+          key: nodeText,
+          typeId: targetInfo.typeId,
+        },
       }
 
       context = {

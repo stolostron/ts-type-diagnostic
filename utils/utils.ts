@@ -47,7 +47,7 @@ export function getPropertyInfo(prop: ts.Symbol, context, type?: ts.Type, pseudo
       isFunc,
       fullText,
       typeId: context.cache.saveType(type),
-      nodeId: context.cache.saveType(declaration),
+      nodeId: context.cache.saveNode(declaration),
       nodeLink: getNodeLink(declaration),
       declaration,
     }
@@ -63,7 +63,7 @@ export function getTypeMap(checker: ts.TypeChecker, type: ts.Type, context) {
     let info = {}
     prop = prop['syntheticOrigin'] || prop
     const propName = prop.escapedName as string
-    const { nodeText, fullText, isOpt, isFunc, nodeLink, typeText, typeId, declaration } = getPropertyInfo(
+    const { nodeText, fullText, isOpt, isFunc, nodeLink, typeText, typeId, nodeId, declaration } = getPropertyInfo(
       prop,
       context,
       undefined
@@ -83,6 +83,7 @@ export function getTypeMap(checker: ts.TypeChecker, type: ts.Type, context) {
       nodeText,
       fullText,
       typeId,
+      nodeId,
       typeText,
       nodeLink,
       parentInfo,

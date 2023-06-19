@@ -415,9 +415,9 @@ function showConflicts(p, problems: (ITypeProblem | IShapeProblem)[], context, s
       targetMap = context.targetMap = getTypeMap(checker, targetType, context)
       sourceType = context.cache.getType(problem.sourceInfo.typeId)
       sourceMap = context.sourceMap = getTypeMap(checker, sourceType, context)
-    } else if (sourceInfo.placeholderTargetKey || context.placeholderInfo) {
-      const placeholderInfo = sourceInfo.placeholderTargetKey ? sourceInfo : context.placeholderInfo
-      const key = placeholderInfo.placeholderTargetKey
+    } else if (sourceInfo.placeholderTarget || context.placeholderInfo) {
+      const placeholderInfo = context.placeholderInfo
+      const key = placeholderInfo.placeholderTarget.key
       const parentLayer = stack[stack.length - 1]
       targetType = context.cache.getType(parentLayer.targetInfo.typeId)
       targetMap = context.targetMap = getTypeMap(checker, targetType, context)
