@@ -80,9 +80,7 @@ function addChoice(context, promptFixes, prompt, description, nodes) {
     // Change replaceType to disableError
 
     const replacement = getReplacement(context, type, fileName, outputNode, primeInfo, otherInfo)
-    //If no replacement in promptFixes with same beg to end
     replacements.push(replacement)
-    //choice.fileName = fileName
   })
 
   // add choice
@@ -113,17 +111,24 @@ async function chooseFixes(promptFixes, context) {
           const description = `${chalk.white(prompt)}: ${pickedFix.description}`
           pickedFix.replacements.forEach((replacement) => {
             const sourceFixes = context.fileCache[replacement.fileName].sourceFixes
-            let sourceFix = sourceFixes.find((sfix) => {
-              sfix.description === description
-            })
-            if (!sourceFix) {
-              sourceFix = {
-                description,
-                replacements: [],
+            // if this replacement doesn't overlap another in this file
+            if (
+              sourceFixes.every((fix) => {
+                return fix.replacements.findIndex(({ beg }) => beg === replacement.beg) === -1
+              })
+            ) {
+              let sourceFix = sourceFixes.find((sfix) => {
+                sfix.description === description
+              })
+              if (!sourceFix) {
+                sourceFix = {
+                  description,
+                  replacements: [],
+                }
+                context.fileCache[replacement.fileName].sourceFixes.push(sourceFix)
               }
-              context.fileCache[replacement.fileName].sourceFixes.push(sourceFix)
+              sourceFix.replacements.push(replacement)
             }
-            sourceFix.replacements.push(replacement)
           })
         }
       }
@@ -289,28 +294,36 @@ function getReplacement(context, type: ReplacementType, fileName, outputNode: ts
         end,
       }
     }
+    case ReplacementType.insertProperty:
+    case ReplacementType.insertOptionalProperty: {
+      const brace = outputNode.getChildren().filter(({ kind }) => kind === ts.SyntaxKind.CloseBraceToken)[0]
+      return {
+        fileName,
+        replace: `${otherInfo.nodeText}${type === ReplacementType.insertOptionalProperty ? '?' : ''}: ${
+          otherInfo.typeText
+        }`,
+        beg: brace.getStart(),
+        end: brace.getStart(),
+      }
+    }
+    case ReplacementType.castType: {
+      break
+    }
+    case ReplacementType.disableError: {
+      // const comment = [
+      //   '// eslint-disable-next-line @typescript-eslint/ban-ts-comment\n',
+      //   `// @ts-expect-error: Fix required in ${externalLibs}\n`,
+      // ]
+      break
+    }
+    case ReplacementType.deleteProperty: {
+      break
+    }
+    case ReplacementType.insertType: {
+      break
+    }
+    case ReplacementType.makeInterfacePartial: {
+      break
+    }
   }
-  //   0 disableError
-  // const comment = [
-  //   '// eslint-disable-next-line @typescript-eslint/ban-ts-comment\n',
-  //   `// @ts-expect-error: Fix required in ${externalLibs}\n`,
-  // ]
-  // C insertProperty
-  //     insertOptionalProperty
-  // D deleteProperty
-  // D castType
-  // E insertType
 }
-
-// const externalLibs = `'${Array.from(libs).join(', ')}'`
-
-// const layer = stack[0]
-// const { sourceInfo, targetInfo } = layer
-// const beg = getNodePos(context, targetInfo.nodeId).beg
-// promptFix.choices.push({
-//   description: `Disable the error with a comment. Problem is in an external library ${chalk.green(externalLibs)}.`,
-//   beg,
-//   end: beg,
-//   replace: comment.join(''),
-// })
-// promptFixes.push(promptFix)

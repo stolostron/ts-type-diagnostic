@@ -1,5 +1,4 @@
 import chalk from 'chalk'
-import { isStructuredType, isFunctionType } from '../utils'
 import { ErrorType, ReplacementType } from '../types'
 
 // ===============================================================================
@@ -16,7 +15,7 @@ import { ErrorType, ReplacementType } from '../types'
 // ===============================================================================
 export function whenMismatchedOrMissingTypes({ problems, stack, context, suggest, addChoice, sourceName, targetName }) {
   if (context.captured || !problems.length) return
-  const { errorType, checker, cache, functionName } = context
+  const { errorType, functionName } = context
 
   const layer = stack[0]
   const { sourceInfo, targetInfo } = layer
@@ -24,24 +23,24 @@ export function whenMismatchedOrMissingTypes({ problems, stack, context, suggest
     //
     // SIMPLE MISMATCH
     case errorType === ErrorType.mismatch: {
-      const suffix = functionName ? ` in function ${functionName}()` : ''
-      const source = chalk.green(sourceInfo.nodeText)
-      const target = chalk.green(targetInfo.nodeText)
-      addChoice = addChoice.bind(null, `Fix ${targetName} ${target} type !== ${sourceName} ${source} type${suffix}?`)
-      addChoice(`Convert ${sourceName} ${source} type`, [
-        { primeInfo: sourceInfo, otherInfo: targetInfo, type: ReplacementType.convertType },
-      ])
-      addChoice(`Union ${targetName} ${target} type`, [
-        { primeInfo: targetInfo, otherInfo: sourceInfo, type: ReplacementType.unionType },
-      ])
-      break
+      // const suffix = functionName ? ` in function ${functionName}()` : ''
+      // const source = chalk.green(sourceInfo.nodeText)
+      // const target = chalk.green(targetInfo.nodeText)
+      // addChoice = addChoice.bind(null, `Fix ${targetName} ${target} type !== ${sourceName} ${source} type${suffix}?`)
+      // addChoice(`Convert ${sourceName} ${source} type`, [
+      //   { primeInfo: sourceInfo, otherInfo: targetInfo, type: ReplacementType.convertType },
+      // ])
+      // addChoice(`Union ${targetName} ${target} type`, [
+      //   { primeInfo: targetInfo, otherInfo: sourceInfo, type: ReplacementType.unionType },
+      // ])
+      // break
     }
 
     //
     // MAKES NO SENSE
     case errorType === ErrorType.simpleToObject:
       if (!functionName) {
-        console.log('Assigning a single variable to an object makes no sense')
+        suggest(`Did you mean to use an object ${chalk.greenBright(sourceInfo.fullText)}`, sourceInfo.nodeLink)
       }
       break
 
@@ -50,7 +49,7 @@ export function whenMismatchedOrMissingTypes({ problems, stack, context, suggest
     case errorType === ErrorType.objectToSimple:
       if (!functionName) {
         suggest(
-          `Did you mean to assign just one property of the ${chalk.greenBright(sourceInfo.fullText)} object`,
+          `Did you mean to assign just one property of ${chalk.greenBright(sourceInfo.fullText)}`,
           sourceInfo.nodeLink
         )
       }
@@ -60,18 +59,38 @@ export function whenMismatchedOrMissingTypes({ problems, stack, context, suggest
     // PLACEHOLDER
     case sourceInfo.isPlaceholder: {
       const { targetMap, placeholderInfo } = context
-      const targetKey = placeholderInfo.placeholderTarget.key
-      const targetType = context.cache.getType(placeholderInfo.placeholderTarget.typeId)
-      const declarations = targetType.getSymbol()?.getDeclarations()
-      const skdf = declarations[0].getText()
-      const d = declarations[0].getChildren()
-      //   missingIndex = 12,
+      const targetKey = placeholderInfo.placeholderTarget ? placeholderInfo.placeholderTarget.key : sourceInfo.targetKey
 
-      const ti = targetMap[targetKey]
-      if (ti) {
-        const r = 0
+      // mismatched type
+      const placeholderTargetInfo = targetMap[targetKey]
+      if (placeholderTargetInfo) {
+        // const source = chalk.green(placeholderInfo.nodeText)
+        // const target = chalk.green(placeholderTargetInfo.nodeText)
+        // placeholderInfo.type = context.cache.getType(placeholderInfo.typeId)
+        // placeholderTargetInfo.type = context.cache.getType(placeholderTargetInfo.typeId)
+        // addChoice = addChoice.bind(null, `Fix ${targetName} ${target} type !== ${sourceName} ${source}?`)
+        // addChoice(`Convert ${sourceName} ${source} type`, [
+        //   { primeInfo: placeholderInfo, otherInfo: placeholderTargetInfo, type: ReplacementType.convertType },
+        // ])
+        // addChoice(`Union ${targetName} ${target} type`, [
+        //   { primeInfo: placeholderTargetInfo, otherInfo: placeholderInfo, type: ReplacementType.unionType },
+        // ])
       } else {
-        const f = 0
+        const targetType = context.cache.getType(placeholderInfo.placeholderTarget.typeId)
+        const declarations = targetType.getSymbol()?.getDeclarations()
+        const declaration = declarations[0]
+        const target = chalk.green(declaration.name ? declaration.name.escapedText : 'literal')
+        targetInfo.declaredId = context.cache.saveNode(declaration)
+        addChoice = addChoice.bind(null, `Fix missing property?`)
+        if (errorType === ErrorType.missingIndex) {
+          addChoice(`Add this index to ${target} map`, [
+            { primeInfo: targetInfo, otherInfo: placeholderInfo, type: ReplacementType.insertProperty },
+          ])
+        } else {
+          addChoice(`Add optional property to ${targetName} ${target} type`, [
+            { primeInfo: targetInfo, otherInfo: placeholderInfo, type: ReplacementType.insertOptionalProperty },
+          ])
+        }
       }
       break
     }
@@ -96,52 +115,6 @@ export function whenMismatchedOrMissingTypes({ problems, stack, context, suggest
     //  errorType === ErrorType.misslike
     // errorType === ErrorType.mustDeclare
   }
-
-  // // const layer = stack[0]
-  // // const { sourceInfo, targetInfo } = layer
-  // targetInfo.type = cache.getType(targetInfo?.typeId)
-  // if (!isStructuredType(targetInfo.type) && !isFunctionType(checker, targetInfo.type)) return
-
-  // // if source is a place holder, we're just updating the target type
-  // if (sourceInfo.isPlaceholder) {
-  //   const { targetMap, placeholderInfo } = context
-  //   const targetKey = placeholderInfo.placeholderTarget.key
-  //   const targetType = context.cache.getType(placeholderInfo.placeholderTarget.typeId)
-  //   const declarations = targetType.getSymbol()?.getDeclarations()
-  //   const skdf = declarations[0].getText()
-  //   const d = declarations[0].getChildren()
-
-  //   const ti = targetMap[targetKey]
-  //   if (ti) {
-  //     const r = 0
-  //   } else {
-  //     const f = 0
-  //   }
-
-  //   // const targetType = context.cache.getType(problem.targetInfo.typeId)
-  //   // const declarationz = targetType.getSymbol()?.getDeclarations()
-  //   // if (!declarationz || declarationz.length === 0) {
-  //   //   const df = 0
-  //   // }
-  //   // const skdf = declarationz[0].getText()
-  // } else {
-  //   sourceInfo.type = cache.getType(sourceInfo?.typeId)
-  //   if (isStructuredType(sourceInfo.type)) {
-  //     const declarations = sourceInfo.type.getSymbol()?.getDeclarations()
-
-  //     const sdf = declarations[0].getText()
-  //     const g = 0
-  //   }
-  // }
-
-  // addChoice(sourceInfo, targetInfo, (outputNode: ts.Node) => {
-  //   return {
-  //     description: `Convert type of ${sourceName} '${source}' to 'number' by removing quotes from ${source}`,
-  //     replace: `${sourceInfo.nodeText.replace(/['"]+/g, '')}`,
-  //     beg: outputNode.getStart(),
-  //     end: outputNode.getEnd(),
-  //   }
-  // })
 }
 // ===============================================================================
 // when you use 'resource', but you should 'resource.resource' instead %-)

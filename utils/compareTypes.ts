@@ -347,6 +347,12 @@ export function compareWithPlaceholder(targetInfo, placeholderInfo, context) {
         targetInfo,
       },
     ]
+    if (!placeholderInfo.placeholderTarget) {
+      placeholderInfo.placeholderTarget = {
+        key: placeholderInfo.targetKey,
+        typeId: targetInfo.typeId,
+      }
+    }
   }
   context.placeholderInfo = context.placeholderInfo || placeholderInfo
   context.targetLink = stack[0].targetInfo.nodeLink
