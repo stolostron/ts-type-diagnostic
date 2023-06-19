@@ -3,15 +3,15 @@
 import chalk from 'chalk'
 import inquirer from 'inquirer'
 
-import { whenSimpleTypesDontMatch } from './whenSimpleTypesDontMatch'
-import { whenCallArgumentsDontMatch } from './whenCallArgumentsDontMatch'
 import { whenArraysDontMatch } from './whenArraysDontMatch'
 import { whenUndefinedTypeDoesntMatch } from './whenUndefinedTypeDoesntMatch'
 import { whenNeverType } from './whenNeverType'
 import { whenPrototypesDontMatch } from './whenPrototypesDontMatch'
-import { whenTypeShapesDontMatch } from './whenTypeShapesDontMatch'
-import { ErrorType, IPromptFix } from '../types'
+import { whenMismatchedOrMissingTypes } from './whenMismatchedOrMissingTypes'
+import { IPromptFix, ReplacementType } from '../types'
 import { cacheFile, saveOutput } from '../cacheFile'
+import ts from 'typescript'
+import { typeToStringLike } from '../utils'
 
 //======================================================================
 //======================================================================
@@ -38,35 +38,18 @@ export async function showPromptFixes(problems, context, stack) {
     suggest: suggest.bind(null, context),
     addChoice: addChoice.bind(null, context, promptFixes),
   }
-  whenCallArgumentsDontMatch(whenContext)
-  //whenSimpleTypesDontMatch(whenContext)
   whenPrototypesDontMatch(whenContext)
   whenArraysDontMatch(whenContext)
-  context.captured =
-    context.errorType === ErrorType.mismatch ||
-    context.errorType === ErrorType.tooManyArgs ||
-    context.errorType === ErrorType.tooFewArgs ||
-    context.errorType === ErrorType.arrayToNonArray ||
-    context.errorType === ErrorType.nonArrayToArray
-  whenTypeShapesDontMatch(whenContext)
+  whenMismatchedOrMissingTypes(whenContext)
   whenUndefinedTypeDoesntMatch(whenContext)
   whenNeverType(whenContext)
   return await chooseFixes(promptFixes, context)
 }
 
-function addChoice(context, promptFixes, prompt, primaryInfo, secondaryInfo, cb) {
+function addChoice(context, promptFixes, prompt, description, nodes) {
   const { cache, fileCache } = context
 
-  // get output node (location in output file we will be making changes)
-  const primaryNode = cache.getNode(primaryInfo.declaredId || primaryInfo.nodeId)
-  const fileName = primaryNode.getSourceFile().fileName
-  let outputCache = fileCache[fileName]
-  if (!outputCache) {
-    outputCache = fileCache[fileName] = cacheFile(primaryNode.getSourceFile())
-  }
-  const outputNode = outputCache.startToOutputNode[primaryNode.getStart()]
-
-  // get current choices
+  // get this fix
   let sourceFix = promptFixes.find((fix) => fix.prompt === prompt)
   if (!sourceFix) {
     sourceFix = {
@@ -75,33 +58,35 @@ function addChoice(context, promptFixes, prompt, primaryInfo, secondaryInfo, cb)
     }
     promptFixes.push(sourceFix)
   }
+  const replacements: any[] = []
+  const choice = {
+    description,
+    replacements,
+  }
+  // get replacements for this choice
+  nodes.forEach(({ primeInfo, otherInfo, type }) => {
+    // get output node (location in output file we will be making changes)
+    const primaryNode = cache.getNode(primeInfo.declaredId || primeInfo.nodeId)
+    const fileName = primaryNode.getSourceFile().fileName
+    let outputCache = fileCache[fileName]
+    if (!outputCache) {
+      outputCache = fileCache[fileName] = cacheFile(primaryNode.getSourceFile())
+    }
+    const outputNode = outputCache.startToOutputNode[primaryNode.getStart()]
+
+    // If output is node_module
+    // Change option name to: Disable error. Problem is in npm package ….
+    // Change output to reverse
+    // Change replaceType to disableError
+
+    const replacement = getReplacement(context, type, fileName, outputNode, primeInfo, otherInfo)
+    //If no replacement in promptFixes with same beg to end
+    replacements.push(replacement)
+    //choice.fileName = fileName
+  })
 
   // add choice
-  const choice = cb(outputNode)
-  choice.fileName = fileName
   sourceFix.choices.push(choice)
-
-  //   If node has a node declaration
-  //    node == declaration
-  // node.getSourceFile
-  // If source file is in node_modules
-  //    Fix = Change fix to //comment disable
-  // Else
-  //    Get filename cache from  sourceFixCache
-  //     If empty,
-  //         Const mapNodeOrder={}
-  //         If nodeToSource if empty
-  //            Create output file
-  //            mapNodesToSource()
-  //     Get nodeToOutputfile from sourceFixCache
-  //    If undefined
-  //       load sourceFile into string
-  //    Fix = cb(node from output file)
-  // If fixes already have a fix at fix’s beg, no prompt
-  //    Just console.log fix’s description
-  // Else
-  //    Show prompt
-  //    Add to fixes on this file
 }
 
 async function chooseFixes(promptFixes, context) {
@@ -123,10 +108,23 @@ async function chooseFixes(promptFixes, context) {
         anyQuit = true
         break
       } else if (pick.fix !== 'No') {
-        const fix = choices.find((choice) => choice.description === pick.fix)
-        if (fix) {
-          fix.description = `${chalk.white(prompt)}: ${fix.description}`
-          context.fileCache[fix.fileName].sourceFixes.push(fix)
+        const pickedFix = choices.find((choice) => choice.description === pick.fix)
+        if (pickedFix) {
+          const description = `${chalk.white(prompt)}: ${pickedFix.description}`
+          pickedFix.replacements.forEach((replacement) => {
+            const sourceFixes = context.fileCache[replacement.fileName].sourceFixes
+            let sourceFix = sourceFixes.find((sfix) => {
+              sfix.description === description
+            })
+            if (!sourceFix) {
+              sourceFix = {
+                description,
+                replacements: [],
+              }
+              context.fileCache[replacement.fileName].sourceFixes.push(sourceFix)
+            }
+            sourceFix.replacements.push(replacement)
+          })
         }
       }
     }
@@ -135,47 +133,62 @@ async function chooseFixes(promptFixes, context) {
 }
 
 export async function applyFixes(fileCache) {
-  let anyFixes = false
+  const summary: string[] = []
+  const fileFixes = {}
   for (const fileName of Object.keys(fileCache)) {
     const { sourceFixes } = fileCache[fileName]
     if (sourceFixes.length) {
       const shortName = fileName.split('/').pop()
-      if (await shouldApplyFixes(shortName, sourceFixes)) {
-        // get the output file as text
-        let output: string = fileCache[fileName].outputFileString
+      summary.push(`  File: ${chalk.cyanBright(shortName)}`)
+      const replacements: any[] = []
+      fileFixes[fileName] = {
+        shortName,
+        output: fileCache[fileName].outputFileString,
+        replacements,
+      }
+      sourceFixes.forEach((fix: { description: string; replacements: any[] }) => {
+        summary.push(`   ${fix.description}`)
+        replacements.push(fix.replacements)
+      })
+    }
+  }
+
+  if (summary.length) {
+    console.log(`\n\nSave fixes for:`)
+    summary.forEach((line) => console.log(line))
+    const questions = [
+      {
+        type: 'confirm',
+        name: 'toBeFixed',
+        message: 'Save?',
+        default: true,
+      },
+    ]
+    const answer = await inquirer.prompt(questions)
+    if (answer.toBeFixed) {
+      console.log('')
+      for (const fileName of Object.keys(fileFixes)) {
+        const fixes = fileFixes[fileName]
+        const replacements = fixes.replacements.flat()
+
         // apply the fixes--last first to preserve positions of above changes
-        sourceFixes.sort((a: { beg: number }, b: { beg: number }) => {
+        replacements.sort((a: { beg: number }, b: { beg: number }) => {
           return b.beg - a.beg
         })
-        sourceFixes.forEach(({ beg, end, replace }) => {
+
+        // do replacements
+        let output = fixes.output
+        replacements.forEach(({ beg, end, replace }) => {
           output = `${output.substring(0, beg)}${replace}${output.substring(end)}`
         })
 
         saveOutput(fileName, output)
-        console.log(`\n--${chalk.cyanBright(shortName)} saved--`)
+        console.log(`-- fixed and saved: ${chalk.cyanBright(fixes.shortName)}--`)
       }
-      anyFixes = true
     }
-  }
-  if (!anyFixes) {
+  } else {
     console.log(`\n--no automatic fixes--`)
   }
-}
-
-async function shouldApplyFixes(fileName, sourceFixes) {
-  if (!sourceFixes.length) return false
-  console.log(`\n\nSave fixes for ${chalk.cyanBright(fileName)}?`)
-  sourceFixes.forEach((fix: { description: string }) => console.log(` ${fix.description}`))
-  const questions = [
-    {
-      type: 'confirm',
-      name: 'toBeFixed',
-      message: 'Save?',
-      default: true,
-    },
-  ]
-  const answer = await inquirer.prompt(questions)
-  return answer.toBeFixed
 }
 
 function suggest(context, msg: string, link?: string, code?: string) {
@@ -200,3 +213,104 @@ function suggest(context, msg: string, link?: string, code?: string) {
     }
   }
 }
+
+function getReplacement(context, type: ReplacementType, fileName, outputNode: ts.Node, primeInfo, otherInfo) {
+  const { checker } = context
+  switch (type) {
+    case ReplacementType.convertType: {
+      switch (true) {
+        case !!(otherInfo.type.flags & ts.TypeFlags.NumberLike):
+          if (primeInfo.type.flags & ts.TypeFlags.Literal) {
+            if (primeInfo.type.flags & ts.TypeFlags.StringLiteral) {
+              if (!Number.isNaN(Number(primeInfo.nodeText.replace(/["']/g, '')))) {
+                return {
+                  fileName,
+                  replace: `${primeInfo.nodeText.replace(/['"]+/g, '')}`,
+                  beg: outputNode.getStart(),
+                  end: outputNode.getEnd(),
+                }
+              } else {
+                return {
+                  fileName,
+                  replace: `Number(${primeInfo.nodeText})`,
+                  beg: outputNode.getStart(),
+                  end: outputNode.getEnd(),
+                }
+              }
+            }
+          }
+          break
+        case !!(otherInfo.type.flags & ts.TypeFlags.StringLike):
+          if (!Number.isNaN(Number(primeInfo.nodeText))) {
+            return {
+              fileName,
+              replace: `'${primeInfo.nodeText}'`,
+              beg: outputNode.getStart(),
+              end: outputNode.getEnd(),
+            }
+          } else {
+            return {
+              fileName,
+              replace: `${primeInfo.nodeText.replace(/['"]+/g, '')}`,
+              beg: outputNode.getEnd(),
+              end: outputNode.getEnd(),
+            }
+          }
+        case !!(otherInfo.type.flags & ts.TypeFlags.BooleanLike):
+          return {
+            fileName,
+            replace: `!!${primeInfo.nodeText}`,
+            beg: outputNode.getStart(),
+            end: outputNode.getEnd(),
+          }
+      }
+
+      break
+    }
+    case ReplacementType.unionType: {
+      // Union type-- get location of type declaration and replace with a union
+      let beg: number
+      let end: number
+      // if type declared after node, replace ': type' with union
+      const children = outputNode.parent.getChildren()
+      if (children[1].kind === ts.SyntaxKind.ColonToken) {
+        beg = children[1].getStart()
+        end = children[2].getEnd()
+      } else {
+        // if no type after node, insert union after node
+        beg = outputNode.getEnd()
+        end = beg
+      }
+      const sourceTypeLike = typeToStringLike(checker, otherInfo.type)
+      return {
+        fileName,
+        replace: `:${primeInfo.typeText} | ${sourceTypeLike}`,
+        beg,
+        end,
+      }
+    }
+  }
+  //   0 disableError
+  // const comment = [
+  //   '// eslint-disable-next-line @typescript-eslint/ban-ts-comment\n',
+  //   `// @ts-expect-error: Fix required in ${externalLibs}\n`,
+  // ]
+  // C insertProperty
+  //     insertOptionalProperty
+  // D deleteProperty
+  // D castType
+  // E insertType
+}
+
+// const externalLibs = `'${Array.from(libs).join(', ')}'`
+
+// const layer = stack[0]
+// const { sourceInfo, targetInfo } = layer
+// const beg = getNodePos(context, targetInfo.nodeId).beg
+// promptFix.choices.push({
+//   description: `Disable the error with a comment. Problem is in an external library ${chalk.green(externalLibs)}.`,
+//   beg,
+//   end: beg,
+//   replace: comment.join(''),
+// })
+// promptFixes.push(promptFix)

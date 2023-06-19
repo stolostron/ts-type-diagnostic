@@ -15,6 +15,7 @@ import { ErrorType } from '../types'
 // ===============================================================================
 export function whenArraysDontMatch({ stack, suggest, context }) {
   if (context.captured) return
+  context.captured = context.errorType === ErrorType.nonArrayToArray || context.errorType === ErrorType.arrayToNonArray
   const layer = stack[stack.length - 1]
   const { sourceInfo, targetInfo } = layer
   switch (context.errorType) {

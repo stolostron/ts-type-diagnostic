@@ -1,5 +1,6 @@
 import chalk from 'chalk'
 import { isFunctionType } from '../utils'
+import { ErrorType } from '../types'
 
 // ===============================================================================
 // ===============================================================================
@@ -15,6 +16,7 @@ import { isFunctionType } from '../utils'
 // ===============================================================================
 export function whenPrototypesDontMatch({ suggest, context, stack }) {
   if (context.captured) return
+  context.captured = context.errorType === ErrorType.tooManyArgs || context.errorType === ErrorType.tooFewArgs
   const { checker } = context
 
   const layer = stack[stack.length - 1]
@@ -44,6 +46,40 @@ export function whenPrototypesDontMatch({ suggest, context, stack }) {
         targetInfo.nodeLink,
         `${targetInfo.name}: ${sourceInfo.typeText}`
       )
+    }
+  }
+
+  const { callingPairs } = context
+  if (callingPairs && callingPairs.length > 1) {
+    // see if arg types are mismatched
+    const indexes: number[] = []
+    if (
+      // see if args are called in wrong order
+      callingPairs.every(({ targetInfo }) => {
+        if (targetInfo) {
+          const targetTypeText = targetInfo.typeText
+          return (
+            callingPairs.findIndex(({ sourceInfo }, inx) => {
+              if (sourceInfo) {
+                const sourceTypeText = sourceInfo.typeText
+                if (targetTypeText === sourceTypeText && !indexes.includes(inx + 1)) {
+                  indexes.push(inx + 1)
+                  return true
+                }
+              }
+              return false
+            }) !== -1
+          )
+        } else {
+          return false
+        }
+      })
+    ) {
+      suggest(
+        `Did you mean to call the arguments in this order ${chalk.greenBright(indexes.join(', '))}`,
+        context.sourceLink
+      )
+      context.captured = true
     }
   }
 }

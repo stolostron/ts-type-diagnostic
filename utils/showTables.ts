@@ -143,10 +143,10 @@ export function showProblemTables(problems, context, stack) {
       specs = `${targetTitle} type !== ${sourceTitle} type`
       break
     case ErrorType.sourcePropMissing:
-      specs = `${sourceTitle} has too ${chalk.red('few')} properties`
+      specs = `${targetTitle} has too ${chalk.red('many')} properties`
       break
     case ErrorType.targetPropMissing:
-      specs = `${sourceTitle} has too ${chalk.red('many')} properties`
+      specs = `${targetTitle} has too ${chalk.red('few')} properties`
       break
     case ErrorType.bothMissing:
       specs = `Both sides have ${chalk.red('missing')} properties`
@@ -507,7 +507,6 @@ function showConflicts(p, problems: (ITypeProblem | IShapeProblem)[], context, s
     }
 
     // SORT CONFLICTING TYPES BY THEIR PARENT INTERFACE IF ANY
-    context.externalLinks = []
     context.mismatchInterfaceMaps = asTypeInterfaces(mismatchArr, targetMap, sourceMap)
     context.misslikeInterfaceMaps = asTypeInterfaces(misslikeArr, targetMap, sourceMap)
     context.missingInterfaceMaps = asTypeInterfaces(missingArr, targetMap, sourceMap)
@@ -565,9 +564,6 @@ function showConflicts(p, problems: (ITypeProblem | IShapeProblem)[], context, s
         let clr = color
         if (inx < MAX_SHOWN_PROP_MISMATCH) {
           if (target && targetMap[target]) {
-            if (targetMap[target].nodeLink.indexOf('node_modules/') !== -1) {
-              context.externalLinks.push(targetMap[target].nodeLink)
-            }
             if (
               global.isVerbose &&
               !showingMultipleProblems &&
@@ -597,9 +593,6 @@ function showConflicts(p, problems: (ITypeProblem | IShapeProblem)[], context, s
             target = ''
           }
           if (source && sourceMap[source]) {
-            if (sourceMap[source].nodeLink.indexOf('node_modules/') !== -1) {
-              context.externalLinks.push(sourceMap[source].nodeLink)
-            }
             if (
               global.isVerbose &&
               !showingMultipleProblems &&

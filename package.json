@@ -1,9 +1,10 @@
 {
   "name": "ts-type-diagnostic",
-  "version": "0.0.26",
+  "version": "0.1.01",
   "main": "./bin/cli.js",
   "bin": {
-    "tstd": "./bin/cli.js"
+    "tstd": "./bin/cli.js",
+    "ts-hound": "./bin/cli.js"
   },
   "scripts": {
     "build": "npm run clean && tsc -p .",
