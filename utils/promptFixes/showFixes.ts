@@ -11,7 +11,7 @@ import { whenMismatchedOrMissingTypes } from './whenMismatchedOrMissingTypes'
 import { IPromptFix, ReplacementType } from '../types'
 import { cacheFile, saveOutput } from '../cacheFile'
 import ts from 'typescript'
-import { typeToStringLike } from '../utils'
+import { getNodeLink, typeToStringLike } from '../utils'
 
 //======================================================================
 //======================================================================
@@ -46,7 +46,7 @@ export async function showPromptFixes(problems, context, stack) {
   return await chooseFixes(promptFixes, context)
 }
 
-function addChoice(context, promptFixes, prompt, description, nodes) {
+function addChoice(context, promptFixes, prompt, description, nodeInfos) {
   const { cache, fileCache } = context
 
   // get this fix
@@ -58,33 +58,52 @@ function addChoice(context, promptFixes, prompt, description, nodes) {
     }
     promptFixes.push(sourceFix)
   }
-  const replacements: any[] = []
+  const replacements: any = []
   const choice = {
     description,
     replacements,
   }
   // get replacements for this choice
-  nodes.forEach(({ primeInfo, otherInfo, type }) => {
+  const libs = new Set()
+  nodeInfos.forEach(({ primeInfo, otherInfo, type }) => {
     // get output node (location in output file we will be making changes)
-    const primaryNode = cache.getNode(primeInfo.declaredId || primeInfo.nodeId)
-    const fileName = primaryNode.getSourceFile().fileName
-    let outputCache = fileCache[fileName]
-    if (!outputCache) {
-      outputCache = fileCache[fileName] = cacheFile(primaryNode.getSourceFile())
+    let inputNode = cache.getNode(primeInfo.declaredId || primeInfo.nodeId)
+    let fileName = inputNode.getSourceFile().fileName
+    // can't make changes to a library
+    if (fileName.indexOf('/node_modules/') !== -1) {
+      const arr = fileName.split('node_modules/')[1].split('/')
+      let lib = arr[0]
+      if (lib.startsWith('@')) {
+        lib += `/${arr[1]}`
+      }
+      libs.add(lib)
+    } else {
+      let outputCache = fileCache[fileName]
+      if (!outputCache) {
+        outputCache = fileCache[fileName] = cacheFile(inputNode.getSourceFile())
+      }
+      const outputNode = outputCache.startToOutputNode[inputNode.getStart()]
+      const replacement = getReplacement(context, type, fileName, outputNode, primeInfo, otherInfo)
+      replacements.push(replacement)
     }
-    const outputNode = outputCache.startToOutputNode[primaryNode.getStart()]
-
-    // If output is node_module
-    // Change option name to: Disable error. Problem is in npm package ….
-    // Change output to reverse
-    // Change replaceType to disableError
-
-    const replacement = getReplacement(context, type, fileName, outputNode, primeInfo, otherInfo)
-    replacements.push(replacement)
   })
 
-  // add choice
-  sourceFix.choices.push(choice)
+  if (libs.size) {
+    const externalLibs = `'${Array.from(libs).join(', ')}'`
+    suggest(
+      context,
+      `Problem is in an external library ${chalk.green(externalLibs)}. Ignore the error`,
+      getNodeLink(context.errorNode),
+      [
+        '// eslint-disable-next-line @typescript-eslint/ban-ts-comment',
+        `// @ts-expect-error: Fix required in ${externalLibs}`,
+      ]
+    )
+  } else {
+    // add choice
+    choice.replacements = replacements.flat()
+    sourceFix.choices.push(choice)
+  }
 }
 
 async function chooseFixes(promptFixes, context) {
@@ -114,7 +133,11 @@ async function chooseFixes(promptFixes, context) {
             // if this replacement doesn't overlap another in this file
             if (
               sourceFixes.every((fix) => {
-                return fix.replacements.findIndex(({ beg }) => beg === replacement.beg) === -1
+                return (
+                  fix.replacements.findIndex(
+                    ({ beg, replace }) => beg === replacement.beg && replace === replacement.replace
+                  ) === -1
+                )
               })
             ) {
               let sourceFix = sourceFixes.find((sfix) => {
@@ -196,7 +219,7 @@ export async function applyFixes(fileCache) {
   }
 }
 
-function suggest(context, msg: string, link?: string, code?: string) {
+function suggest(context, msg: string, link?: string, code?: string | string[]) {
   let multiLine = false
   context.hadSuggestions = true
   let codeMsg = ''
@@ -220,7 +243,10 @@ function suggest(context, msg: string, link?: string, code?: string) {
 }
 
 function getReplacement(context, type: ReplacementType, fileName, outputNode: ts.Node, primeInfo, otherInfo) {
-  const { checker } = context
+  const { checker, cache } = context
+  if (otherInfo && !otherInfo.type) {
+    otherInfo.type = cache.getType(otherInfo.typeId)
+  }
   switch (type) {
     case ReplacementType.convertType: {
       switch (true) {
@@ -294,14 +320,24 @@ function getReplacement(context, type: ReplacementType, fileName, outputNode: ts
         end,
       }
     }
+    case ReplacementType.makeOptional: {
+      const children = outputNode.parent.getChildren()
+      if (children[1].kind === ts.SyntaxKind.ColonToken) {
+        return {
+          fileName,
+          replace: '?',
+          beg: children[1].getStart(),
+          end: children[1].getStart(),
+        }
+      }
+    }
     case ReplacementType.insertProperty:
     case ReplacementType.insertOptionalProperty: {
       const brace = outputNode.getChildren().filter(({ kind }) => kind === ts.SyntaxKind.CloseBraceToken)[0]
+      const typeText = otherInfo.type ? typeToStringLike(checker, otherInfo.type) : otherInfo.typeText
       return {
         fileName,
-        replace: `${otherInfo.nodeText}${type === ReplacementType.insertOptionalProperty ? '?' : ''}: ${
-          otherInfo.typeText
-        }`,
+        replace: `${otherInfo.nodeText}${type === ReplacementType.insertOptionalProperty ? '?' : ''}: ${typeText},`,
         beg: brace.getStart(),
         end: brace.getStart(),
       }
@@ -317,9 +353,6 @@ function getReplacement(context, type: ReplacementType, fileName, outputNode: ts
       break
     }
     case ReplacementType.deleteProperty: {
-      break
-    }
-    case ReplacementType.insertType: {
       break
     }
     case ReplacementType.makeInterfacePartial: {

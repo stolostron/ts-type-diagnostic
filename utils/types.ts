@@ -32,15 +32,17 @@ export enum ErrorType {
 
 export enum ReplacementType {
   convertType = 0,
-  unionType = 1,
-  misslike = 2,
-  insertProperty = 3,
-  insertOptionalProperty = 4,
-  castType = 5,
-  makeInterfacePartial = 6,
-  disableError = 7,
-  deleteProperty = 8,
-  insertType = 9,
+  unionType,
+  misslike,
+  insertProperty,
+  insertOptionalProperty,
+  castType,
+  makeInterfacePartial,
+  disableError,
+  deleteProperty,
+  insertType,
+  insertInterface,
+  makeOptional,
 }
 
 export interface IProblemCache {
