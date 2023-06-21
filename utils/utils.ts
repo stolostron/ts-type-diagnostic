@@ -153,7 +153,7 @@ export function asTypeInterfaces(conflicts, targetMap, sourceMap) {
 
 export function andMore(interfaces, conflicts, { sourceInterfaceMap, targetInterfaceMap }) {
   let base = `                ...and ${conflicts.length - 6} more ...`
-  ;[sourceInterfaceMap, targetInterfaceMap].forEach((map) => {
+  ;[sourceInterfaceMap, targetInterfaceMap].forEach((map = {}) => {
     Object.keys(map).forEach((key, inx) => {
       const props = map[key]
       if (props[0].altParentInfo) {

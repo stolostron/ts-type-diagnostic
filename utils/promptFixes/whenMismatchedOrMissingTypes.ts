@@ -80,18 +80,20 @@ export function whenMismatchedOrMissingTypes(whenContext) {
       } else {
         const targetType = context.cache.getType(placeholderInfo.placeholderTarget.typeId)
         const declarations = targetType.getSymbol()?.getDeclarations()
-        const declaration = declarations[0]
-        const target = chalk.green(declaration.name ? declaration.name.escapedText : 'literal')
-        targetInfo.declaredId = context.cache.saveNode(declaration)
-        addChoice = addChoice.bind(null, `Fix missing property?`)
-        if (errorType === ErrorType.missingIndex) {
-          addChoice(`Add this index to ${target} map`, [
-            { primeInfo: targetInfo, otherInfo: placeholderInfo, type: ReplacementType.insertProperty },
-          ])
-        } else {
-          addChoice(`Add optional property to ${targetName} ${target} type`, [
-            { primeInfo: targetInfo, otherInfo: placeholderInfo, type: ReplacementType.insertOptionalProperty },
-          ])
+        if (declarations) {
+          const declaration = declarations[0]
+          const target = chalk.green(declaration.name ? declaration.name.escapedText : 'literal')
+          targetInfo.declaredId = context.cache.saveNode(declaration)
+          addChoice = addChoice.bind(null, `Fix missing property?`)
+          if (errorType === ErrorType.missingIndex) {
+            addChoice(`Add this index to ${target} map`, [
+              { primeInfo: targetInfo, otherInfo: placeholderInfo, type: ReplacementType.insertProperty },
+            ])
+          } else {
+            addChoice(`Add optional property to ${targetName} ${target} type`, [
+              { primeInfo: targetInfo, otherInfo: placeholderInfo, type: ReplacementType.insertOptionalProperty },
+            ])
+          }
         }
       }
       break

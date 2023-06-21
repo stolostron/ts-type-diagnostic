@@ -18,7 +18,7 @@ global.isVerbose = false
 let checker: ts.TypeChecker
 
 // errors we ignore
-const ignoreTheseErrors = [6133, 2304, 2448, 2454]
+const ignoreTheseErrors = [6133, 6142, 2304, 2305, 2448, 2454, 2593, 7005, 7006, 7016, 7031]
 
 //======================================================================
 //======================================================================
@@ -45,15 +45,14 @@ export function startSniffing(fileNames: string | any[] | readonly string[], ver
     global.isVerbose = verbose
     global.homedir = os.homedir()
 
-    //options.isolatedModules = false
-    console.log('starting...')
+    console.log("Starting 'the hound'...")
     const program = ts.createProgram(fileNames, options)
     checker = program.getTypeChecker()
     const syntactic = program.getSyntacticDiagnostics()
     if (syntactic.length) {
       console.log('Warning: there are syntax errors.')
     }
-    console.log('looking...')
+    console.log("Releasing 'the hound'...")
     startFixing(program.getSemanticDiagnostics(), fileNames)
   } else {
     console.log('No files specified.')
