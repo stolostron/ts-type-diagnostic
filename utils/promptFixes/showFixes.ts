@@ -84,7 +84,9 @@ function addChoice(context, promptFixes, prompt, description, nodeInfos) {
       }
       const outputNode = outputCache.startToOutputNode[inputNode.getStart()]
       const replacement = getReplacement(context, type, fileName, outputNode, primeInfo, otherInfo)
-      replacements.push(replacement)
+      if (replacement) {
+        replacements.push(replacement)
+      }
     }
   })
 
@@ -99,7 +101,7 @@ function addChoice(context, promptFixes, prompt, description, nodeInfos) {
         `// @ts-expect-error: Fix required in ${externalLibs}`,
       ]
     )
-  } else {
+  } else if (replacements.length) {
     // add choice
     choice.replacements = replacements.flat()
     sourceFix.choices.push(choice)
