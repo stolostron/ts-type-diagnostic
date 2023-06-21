@@ -4,17 +4,17 @@ import ts from 'typescript'
 
 import {
   getFullName,
-  getNodeDeclaration,
   getNodeLink,
   getText,
   getTypeLink,
   isArrayType,
   isFunctionLikeKind,
-  isStructuredType,
   typeToString,
   typeToStringLike,
 } from './utils'
 import { compareTypes, compareWithPlaceholder, getPlaceholderStack } from './compareTypes'
+import { IProblemCache } from './types'
+import { getNodeDeclaration } from './cacheFile'
 
 //======================================================================
 //======================================================================
@@ -29,22 +29,12 @@ import { compareTypes, compareWithPlaceholder, getPlaceholderStack } from './com
 //======================================================================
 //======================================================================
 // ERROR JUST SAYS THERE'S A CONFLICT, BUT NOT WHAT TYPES ARE IN CONFLICT
-export function findProblems(programContext, code, errorNode: ts.Node, node: ts.Node, nodeId, cache) {
-  const context: {
-    code: any
-    node: ts.Node
-    nodeId: number
-    errorNode?: ts.Node
-    arrayItems?: ts.Node[]
-    cache: any
-    sourceDeclared?: ts.Node
-    targetDeclared?: ts.Node
-    problems: { problems: any[]; stack: any[]; context: any }[]
-  } = {
+export function findProblems(programContext, code, errorNode: ts.Node, node: ts.Node, problemBeg, cache) {
+  const context: IProblemCache = {
     ...programContext,
     code,
     node,
-    nodeId,
+    problemBeg,
     errorNode,
     cache,
     problems: [],
@@ -67,7 +57,7 @@ export function findProblems(programContext, code, errorNode: ts.Node, node: ts.
       if (children[0].kind === ts.SyntaxKind.PropertyAccessExpression) {
         const objectName = children[0].getFirstToken()
         if (objectName) {
-          context.targetDeclared = getNodeDeclaration(objectName, cache)
+          context.objectDeclaration = getNodeDeclaration(objectName, context)
         }
       }
       findFunctionCallTargetAndSourceToCompare(node, errorNode, context)
@@ -130,12 +120,15 @@ function createPropertyAccessTargetAndSourceToCompare(targetNode: ts.Node, sourc
   const { checker } = context
   const targetType: ts.Type = checker.getTypeAtLocation(targetNode)
   const targetTypeText = typeToString(checker, targetType)
+  const targetDeclaration = getNodeDeclaration(targetNode, context)
   const targetInfo = {
     nodeText: getText(targetNode),
     typeText: targetTypeText,
-    typeId: context.cache.saveType(targetType),
     fullText: getFullName(targetNode, targetTypeText),
     nodeLink: getNodeLink(targetNode),
+    typeId: context.cache.saveType(targetType),
+    nodeId: context.cache.saveNode(targetDeclaration),
+    declaredId: context.cache.saveNode(targetDeclaration),
   }
 
   // try to get the type of the accessor using the original expression (a = b)
@@ -156,21 +149,18 @@ function createPropertyAccessTargetAndSourceToCompare(targetNode: ts.Node, sourc
     nodeLink: getNodeLink(sourceNode),
     node: sourceNode,
     fullText: getFullName(nodeText, typeText),
-    placeholderTargetKey: nodeText, //will be missing in target but that's the point
+    targetKey: nodeText,
   }
 
   context = {
     ...context,
-    prefix: 'The object',
     sourceNode,
     targetNode,
     sourceLink: placeholderInfo.nodeLink,
     targetLink: targetInfo.nodeLink,
-    targetDeclared: getNodeDeclaration(targetNode, context.cache),
     targetTitle: 'Object',
     sourceTitle: 'Property',
     missingAccess: true,
-    hadPayoff: true,
   }
   const { problems, stack } = compareWithPlaceholder(targetInfo, placeholderInfo, context)
 
@@ -194,12 +184,15 @@ function findAssignmentTargetAndSourceToCompare(targetNode: ts.Node, sourceNode:
   const { checker } = context
   const targetType: ts.Type = checker.getTypeAtLocation(targetNode)
   const targetTypeText = typeToString(checker, targetType)
+  const targetDeclaration = getNodeDeclaration(targetNode, context)
   const targetInfo = {
     nodeText: getText(targetNode),
     typeText: targetTypeText,
-    typeId: context.cache.saveType(targetType),
     fullText: getFullName(targetNode, targetTypeText),
-    nodeLink: getNodeLink(targetNode),
+    nodeLink: getNodeLink(targetDeclaration),
+    typeId: context.cache.saveType(targetType),
+    nodeId: context.cache.saveNode(targetNode),
+    declaredId: context.cache.saveNode(targetDeclaration),
   }
   let sourceType: ts.Type = checker.getTypeAtLocation(sourceNode)
 
@@ -219,14 +212,12 @@ function findAssignmentTargetAndSourceToCompare(targetNode: ts.Node, sourceNode:
     // if function, need to make sure each type returned can be assigned to target
     const returns = context.cache.containerToReturns[sourceNode.getStart()]
     if (returns) {
-      let hadPayoff = false
+      let hadProblem = false
       returns.forEach((rn) => {
-        if (hadPayoff) {
-          console.log('\n\n')
-        }
-        hadPayoff = findReturnStatementTargetAndSourceToCompare(rn, targetType, context)
+        findReturnStatementTargetAndSourceToCompare(rn, targetType, context)
+        hadProblem = context.problems.length > 0
       })
-      return hadPayoff
+      return hadProblem
     } else {
       //======================================================================
       //===============   ASSIGN LITERAL ==========================
@@ -253,12 +244,14 @@ function findAssignmentTargetAndSourceToCompare(targetNode: ts.Node, sourceNode:
     ) {
       const targetType: ts.Type = mapType
       const targetTypeText = typeToString(checker, targetType)
+      const targetDeclaration = getNodeDeclaration(targetNode, context)
       const targetInfo = {
         nodeText: targetTypeText,
         typeText: targetTypeText,
         typeId: context.cache.saveType(targetType),
         fullText: getFullName(targetTypeText, targetTypeText),
         nodeLink: getTypeLink(targetType),
+        declaredId: context.cache.saveNode(targetDeclaration),
       }
 
       // ex: [key: string]: string
@@ -270,20 +263,21 @@ function findAssignmentTargetAndSourceToCompare(targetNode: ts.Node, sourceNode:
         nodeLink: getNodeLink(sourceNode),
         node: sourceNode,
         fullText: getFullName(nodeText, typeText),
-        placeholderTargetKey: nodeText, //will be missing in target but that's the point
+        placeholderTarget: {
+          key: nodeText,
+          typeId: targetInfo.typeId,
+        },
       }
 
       context = {
         ...context,
         sourceNode,
         targetNode,
-        targetDeclared: getNodeDeclaration(targetNode, context.cache),
         sourceLink: placeholderInfo.nodeLink,
         targetLink: targetInfo.nodeLink,
         targetTitle: 'Map',
         sourceTitle: 'Index',
         missingIndex: true,
-        hadPayoff: true,
       }
 
       const { problems, stack } = compareWithPlaceholder(targetInfo, placeholderInfo, context)
@@ -296,25 +290,23 @@ function findAssignmentTargetAndSourceToCompare(targetNode: ts.Node, sourceNode:
   const sourceInfo = {
     nodeText: getText(sourceNode),
     typeText: sourceTypeText,
-    typeId: context.cache.saveType(sourceType),
     fullText: getFullName(sourceNode, sourceTypeText),
     nodeLink: getNodeLink(sourceNode),
+    typeId: context.cache.saveType(sourceType),
+    nodeId: context.cache.saveNode(sourceNode),
   }
 
   // individual array items mismatch the target
   const pathContext = {
     ...context,
-    prefix: isStructuredType(targetType) || isStructuredType(sourceType) ? 'Object' : 'One side',
     sourceNode,
     targetNode,
     sourceLink: getNodeLink(sourceNode),
-    targetLink: getNodeLink(targetNode),
-    targetDeclared: getNodeDeclaration(targetNode, context.cache),
-    hadPayoff: false,
   }
-  compareTypes(targetType, sourceType, getPlaceholderStack(targetInfo, sourceInfo, pathContext), pathContext)
-
-  return pathContext.hadPayoff
+  const stack = getPlaceholderStack(targetInfo, sourceInfo, pathContext)
+  pathContext.targetLink = stack[0].targetInfo.nodeLink
+  compareTypes(targetType, sourceType, stack, pathContext)
+  return pathContext.problems.length > 0
 }
 
 //======================================================================
@@ -330,7 +322,7 @@ function findAssignmentTargetAndSourceToCompare(targetNode: ts.Node, sourceNode:
 //======================================================================
 
 function findReturnStatementTargetAndSourceToCompare(node: ts.Node, containerType: ts.Type | undefined, context) {
-  const { checker, options } = context
+  const { checker } = context
   const children = node.getChildren()
   // source is return type
   const sourceType: ts.Type = checker.getTypeAtLocation(children[1])
@@ -346,12 +338,13 @@ function findReturnStatementTargetAndSourceToCompare(node: ts.Node, containerTyp
     const targetInfo = {
       nodeText: container.parent?.symbol?.getName(),
       typeText: targetTypeText,
-      typeId: context.cache.saveType(targetType),
       fullText: getFullName(
         container.parent.kind !== ts.SyntaxKind.SourceFile ? `${container.parent?.symbol?.getName()}: ` : '',
         targetTypeText
       ),
       nodeLink: getNodeLink(container),
+      typeId: context.cache.saveType(targetType),
+      nodeId: context.cache.saveNode(container),
     }
 
     const arrayItems = context.cache.arrayItemsToTarget[node.getStart()]
@@ -361,19 +354,18 @@ function findReturnStatementTargetAndSourceToCompare(node: ts.Node, containerTyp
       const sourceInfo = {
         nodeText: getText(node),
         typeText: sourceTypeText.replace('return ', ''),
-        typeId: context.cache.saveType(sourceType),
         fullText: getText(node),
         nodeLink: getNodeLink(node),
+        typeId: context.cache.saveType(sourceType),
+        nodeId: context.cache.saveNode(node),
       }
       const pathContext = {
         ...context,
         sourceNode: node,
         targetNode: container,
-        prefix: 'The return type',
         sourceLink,
         targetLink,
         sourceTitle: 'Return',
-        hadPayoff: false,
       }
       compareTypes(
         targetType,
@@ -385,9 +377,9 @@ function findReturnStatementTargetAndSourceToCompare(node: ts.Node, containerTyp
           },
         ],
         pathContext,
-        options.strictFunctionTypes
+        global.options.strictFunctionTypes
       )
-      return pathContext.hadPayoff
+      return pathContext.problems.length > 0
     }
   }
   return false
@@ -411,6 +403,11 @@ function findFunctionCallTargetAndSourceToCompare(node: ts.Node, errorNode, cont
   let tooManyArguments = false
   let tooFewArguments = false
   const type = checker.getTypeAtLocation(children[0])
+  const declarations = type.getSymbol()?.getDeclarations()
+  if (declarations) {
+    context.functionDeclared = declarations[0]
+  }
+  context.functionName = children[0].getText()
   const signature = checker.getSignaturesOfType(type, 0)[0]
   if (signature) {
     // create calling pairs
@@ -429,10 +426,11 @@ function findFunctionCallTargetAndSourceToCompare(node: ts.Node, errorNode, cont
           name,
           type,
           typeText,
-          typeId: context.cache.saveType(type),
           fullText: getFullName(name, typeText),
           nodeText: name,
           nodeLink: getNodeLink(node),
+          typeId: context.cache.saveType(type),
+          nodeId: context.cache.saveNode(arg),
         }
       }
       if (inx < params.length) {
@@ -462,10 +460,11 @@ function findFunctionCallTargetAndSourceToCompare(node: ts.Node, errorNode, cont
           name,
           type,
           typeText,
-          typeId: context.cache.saveType(type),
           fullText: getFullName(name, typeText),
           nodeText: name,
           nodeLink: getNodeLink(param.valueDeclaration),
+          typeId: context.cache.saveType(type),
+          nodeId: context.cache.saveNode(param.valueDeclaration),
           isOpt,
         }
       }
@@ -483,7 +482,6 @@ function findFunctionCallTargetAndSourceToCompare(node: ts.Node, errorNode, cont
     callingPairs.some(({ sourceInfo, targetInfo }, inx) => {
       // number of arguments mismatch
       if (tooManyArguments || tooFewArguments) {
-        const func = getNodeDeclaration(children[0], context.cache)
         const pathContext = {
           ...context,
           callingPairs,
@@ -492,7 +490,7 @@ function findFunctionCallTargetAndSourceToCompare(node: ts.Node, errorNode, cont
           tooFewArguments,
           tooManyArguments,
           sourceLink: getNodeLink(node),
-          targetLink: getNodeLink(func),
+          targetLink: getNodeLink(context.functionDeclared),
           sourceTitle: 'Caller',
           targetTitle: 'Callee',
         }
@@ -536,12 +534,10 @@ function findFunctionCallTargetAndSourceToCompare(node: ts.Node, errorNode, cont
         errorIndex,
         callMismatch: true,
         tooManyArguments,
-        prefix: 'The calling argument type',
         sourceLink: sourceInfo.nodeLink,
         targetLink: targetInfo?.nodeLink,
         sourceTitle: 'Caller',
         targetTitle: 'Callee',
-        hadPayoff: false,
       }
       const remaining = callingPairs.length - inx - 1
       if (remaining) {
@@ -597,12 +593,10 @@ function findArrayItemTargetAndSourceToCompare(arrayItems, targetType, targetInf
     const sourceTypeText = typeToString(checker, sourceType)
     const pathContext = {
       ...context,
-      prefix: 'The array item type',
       sourceLink: getNodeLink(sourceNode),
       targetLink: targetInfo.nodeLink,
       sourceTitle: 'Item',
       targetTitle: 'Target',
-      hadPayoff: false,
     }
     const remaining = arrayItems.length - inx - 1
     if (remaining) {
@@ -616,9 +610,10 @@ function findArrayItemTargetAndSourceToCompare(arrayItems, targetType, targetInf
           sourceInfo: {
             nodeText: getText(sourceNode),
             typeText: sourceTypeText,
-            typeId: context.cache.saveType(sourceType),
             fullText: getFullName(sourceNode, sourceTypeText),
             nodeLink: getNodeLink(sourceNode),
+            typeId: context.cache.saveType(sourceType),
+            nodeId: context.cache.saveNode(sourceNode),
           },
           targetInfo,
         },

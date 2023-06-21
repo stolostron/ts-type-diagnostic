@@ -51,11 +51,7 @@ export function showProblemTables(problems, context, stack) {
   //======================================================================
   // FOR TYPE CONFLICTS, TARGET IS ON THE LEFT AND SOURCE IS ON THE RIGHT TO MATCH 'TARGET = SOURCE' CONVENTION
   // FOR FUNCTION CALLS, THE ORDER IS REVERSED TO MATCH FUNC(ARG) ==> CONST FUNC(PARAM) CONVENTION
-  const { code, callMismatch, sourceTitle = 'Source', targetTitle = 'Target', sourceLink, targetDeclared } = context
-  let { targetLink } = context
-  if (context.targetDeclared) {
-    targetLink = getNodeLink(targetDeclared)
-  }
+  const { code, callMismatch, sourceTitle = 'Source', targetTitle = 'Target', sourceLink, targetLink } = context
   const columns: {
     name: string
     minLen?: number
@@ -147,10 +143,10 @@ export function showProblemTables(problems, context, stack) {
       specs = `${targetTitle} type !== ${sourceTitle} type`
       break
     case ErrorType.sourcePropMissing:
-      specs = `${sourceTitle} has too ${chalk.red('few')} properties`
+      specs = `${targetTitle} has too ${chalk.red('many')} properties`
       break
     case ErrorType.targetPropMissing:
-      specs = `${sourceTitle} has too ${chalk.red('many')} properties`
+      specs = `${targetTitle} has too ${chalk.red('few')} properties`
       break
     case ErrorType.bothMissing:
       specs = `Both sides have ${chalk.red('missing')} properties`
@@ -172,7 +168,7 @@ export function showProblemTables(problems, context, stack) {
       break
   }
 
-  console.log(`TS${code}: ${specs} (${context.nodeId})`)
+  console.log(`TS${code}: ${specs} (${context.problemBeg})`)
 
   // print the table
   p.printTable()
@@ -279,7 +275,7 @@ function showCallingArgumentConflicts(p, problems, context, stack): ErrorType {
 //======================================================================
 
 function showConflicts(p, problems: (ITypeProblem | IShapeProblem)[], context, stack, arg?): ErrorType {
-  const { checker, isVerbose } = context
+  const { checker } = context
   // display the path we took to get here
   let spacer = ''
   // let lastTargetType
@@ -416,15 +412,15 @@ function showConflicts(p, problems: (ITypeProblem | IShapeProblem)[], context, s
     let sourceMap = {}
     if (isShapeProblem(problem)) {
       targetType = context.cache.getType(problem.targetInfo.typeId)
-      targetMap = context.targetMap = getTypeMap(checker, targetType, context, misslike)
+      targetMap = context.targetMap = getTypeMap(checker, targetType, context)
       sourceType = context.cache.getType(problem.sourceInfo.typeId)
-      sourceMap = context.sourceMap = getTypeMap(checker, sourceType, context, misslike)
-    } else if (sourceInfo.placeholderTargetKey || context.placeholderInfo) {
-      const placeholderInfo = sourceInfo.placeholderTargetKey ? sourceInfo : context.placeholderInfo
-      const key = placeholderInfo.placeholderTargetKey
+      sourceMap = context.sourceMap = getTypeMap(checker, sourceType, context)
+    } else if (sourceInfo.placeholderTarget || context.placeholderInfo) {
+      const placeholderInfo = context.placeholderInfo
+      const key = placeholderInfo.placeholderTarget.key
       const parentLayer = stack[stack.length - 1]
       targetType = context.cache.getType(parentLayer.targetInfo.typeId)
-      targetMap = context.targetMap = getTypeMap(checker, targetType, context, misslike)
+      targetMap = context.targetMap = getTypeMap(checker, targetType, context)
       sourceMap[key] = placeholderInfo
       const targetProp = targetMap[key]
       reversed.contextual = Object.keys(targetMap).filter((k) => k !== key)
@@ -458,7 +454,7 @@ function showConflicts(p, problems: (ITypeProblem | IShapeProblem)[], context, s
       arr.forEach((propName) => {
         let targetText = targetMap[propName].fullText
         let sourceText = sourceMap[propName].fullText
-        if (inx === 0 && targetText.split('|').length > 1 && !isVerbose) {
+        if (inx === 0 && targetText.split('|').length > 1 && !global.isVerbose) {
           targetText = `${propName}: ${sourceMap[propName].typeText} | ... ${addNote(maxs, targetText)}`
         }
         if (inx === 1) {
@@ -511,7 +507,6 @@ function showConflicts(p, problems: (ITypeProblem | IShapeProblem)[], context, s
     }
 
     // SORT CONFLICTING TYPES BY THEIR PARENT INTERFACE IF ANY
-    context.externalLinks = []
     context.mismatchInterfaceMaps = asTypeInterfaces(mismatchArr, targetMap, sourceMap)
     context.misslikeInterfaceMaps = asTypeInterfaces(misslikeArr, targetMap, sourceMap)
     context.missingInterfaceMaps = asTypeInterfaces(missingArr, targetMap, sourceMap)
@@ -569,11 +564,8 @@ function showConflicts(p, problems: (ITypeProblem | IShapeProblem)[], context, s
         let clr = color
         if (inx < MAX_SHOWN_PROP_MISMATCH) {
           if (target && targetMap[target]) {
-            if (targetMap[target].nodeLink.indexOf('node_modules/') !== -1) {
-              context.externalLinks.push(targetMap[target].nodeLink)
-            }
             if (
-              isVerbose &&
+              global.isVerbose &&
               !showingMultipleProblems &&
               targetMap[target].altParentInfo &&
               targetMap[target].altParentInfo.fullText !== lastTargetParent
@@ -601,11 +593,8 @@ function showConflicts(p, problems: (ITypeProblem | IShapeProblem)[], context, s
             target = ''
           }
           if (source && sourceMap[source]) {
-            if (sourceMap[source].nodeLink.indexOf('node_modules/') !== -1) {
-              context.externalLinks.push(sourceMap[source].nodeLink)
-            }
             if (
-              isVerbose &&
+              global.isVerbose &&
               !showingMultipleProblems &&
               sourceMap[source].altParentInfo &&
               sourceMap[source].altParentInfo.fullText !== lastSourceParent
@@ -679,10 +668,9 @@ function showConflicts(p, problems: (ITypeProblem | IShapeProblem)[], context, s
 // ===============================================================================
 
 export function showTableNotes(problems, context) {
-  const { isVerbose } = context
   const { hadSuggestions, notes } = context
   const { maxs, links, interfaces } = notes
-  if (isVerbose) {
+  if (global.isVerbose) {
     if (problems[0].unchecked && problems[0].unchecked.length) {
       console.log(`( ${chalk.cyan(problems[0].unchecked.join(', '))} cannot be checked until problems are resolved )`)
     }
@@ -692,11 +680,11 @@ export function showTableNotes(problems, context) {
   }
 
   // print the table notes:
-  if (!hadSuggestions || isVerbose) {
+  if (!hadSuggestions || global.isVerbose) {
     links.forEach((link) => console.log(link))
   }
 
-  if (isVerbose) {
+  if (global.isVerbose) {
     maxs.forEach((max) => console.log(max))
     interfaces.forEach((inter) => console.log(inter))
   }

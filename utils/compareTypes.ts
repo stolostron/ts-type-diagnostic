@@ -7,7 +7,6 @@ import {
   filterProblems,
   findParentExpression,
   getFullName,
-  getNodeDeclaration,
   getPropText,
   getPropertyInfo,
   getTypeLink,
@@ -19,6 +18,7 @@ import {
   mergeShapeProblems,
   typeToString,
 } from './utils'
+import { getNodeDeclaration } from './cacheFile'
 
 //======================================================================
 //======================================================================
@@ -347,7 +347,16 @@ export function compareWithPlaceholder(targetInfo, placeholderInfo, context) {
         targetInfo,
       },
     ]
+    if (!placeholderInfo.placeholderTarget) {
+      placeholderInfo.placeholderTarget = {
+        key: placeholderInfo.targetKey,
+        typeId: targetInfo.typeId,
+      }
+    }
   }
+  context.placeholderInfo = context.placeholderInfo || placeholderInfo
+  context.targetLink = stack[0].targetInfo.nodeLink
+
   const problems = [
     {
       sourceInfo: placeholderInfo,
@@ -360,10 +369,8 @@ export function compareWithPlaceholder(targetInfo, placeholderInfo, context) {
 // pad the stack so that inner properties line up
 export function getPlaceholderStack(targetInfo, sourceInfo, context) {
   const { checker } = context
-  const sourceNode = context.sourceNode
   const targetNode = context.targetNode
-  context.sourceDeclared = getNodeDeclaration(sourceNode, context.cache)
-  let targetDeclared = getNodeDeclaration(targetNode, context.cache)
+  let targetDeclared = getNodeDeclaration(targetNode, context)
   let stack: { targetInfo: INodeInfo; sourceInfo: INodeInfo | IPlaceholderInfo }[] = []
   let nodeText = targetNode.getText()
   let path = nodeText.split(/\W+/)
@@ -371,15 +378,6 @@ export function getPlaceholderStack(targetInfo, sourceInfo, context) {
     // fix layer top
     path = path.reverse()
     let propName = (nodeText = path.shift())
-
-    // when comparing with a real variable on sourcw side
-    // remember what target key to compare against
-    if (!sourceInfo.placeholderTargetKey) {
-      context.placeholderInfo = {
-        ...sourceInfo,
-        placeholderTargetKey: nodeText,
-      }
-    }
 
     // 0 = c of a.b.c, now do a.b
     let node: ts.Node = targetNode
@@ -399,9 +397,16 @@ export function getPlaceholderStack(targetInfo, sourceInfo, context) {
         return false
       })
 
-      // problem prop
-      if (stack.length === 0) {
-        context.targetDeclared = node
+      // when comparing with a real variable on source side
+      // remember what target key to compare against
+      if (!context.placeholderInfo) {
+        context.placeholderInfo = {
+          ...sourceInfo,
+          placeholderTarget: {
+            key: sourceInfo.targetKey || nodeText,
+            typeId: context.cache.saveType(type),
+          },
+        }
       }
 
       // add filler layer
@@ -415,6 +420,7 @@ export function getPlaceholderStack(targetInfo, sourceInfo, context) {
           nodeText,
           typeText,
           typeId: context.cache.saveType(type),
+          declaredId: context.cache.saveNode(node),
           fullText: getFullName(nodeText, typeText),
           nodeLink: getTypeLink(type),
         },
@@ -425,6 +431,15 @@ export function getPlaceholderStack(targetInfo, sourceInfo, context) {
     stack = stack.reverse()
     return stack
   } else {
+    if (sourceInfo.targetKey) {
+      context.placeholderInfo = {
+        ...sourceInfo,
+        placeholderTarget: {
+          key: sourceInfo.targetKey || nodeText,
+          typeId: targetInfo.typeId,
+        },
+      }
+    }
     return [{ sourceInfo, targetInfo }]
   }
 }

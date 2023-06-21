@@ -1,4 +1,5 @@
 /* Copyright Contributors to the Open Cluster Management project */
+import ts from 'typescript'
 export const MAX_SHOWN_PROP_MISMATCH = 6
 export const MAX_COLUMN_WIDTH = 80
 
@@ -29,12 +30,41 @@ export enum ErrorType {
   tooFewArgs = 15,
 }
 
+export enum ReplacementType {
+  convertType = 0,
+  unionType,
+  misslike,
+  insertProperty,
+  insertOptionalProperty,
+  castType,
+  makeInterfacePartial,
+  disableError,
+  deleteProperty,
+  insertType,
+  insertInterface,
+  makeOptional,
+}
+
+export interface IProblemCache {
+  code: number
+  node: ts.Node
+  problemBeg: number
+  errorNode?: ts.Node
+  arrayItems?: ts.Node[]
+  cache: any
+  objectDeclaration: any
+  problems: { problems: any[]; stack: any[]; context: any }[]
+}
+
 export interface IPlaceholder {
   isPlaceholder?: boolean
 }
 export interface IPlaceholderInfo extends IPlaceholder {
   // when comparing with a placeholder (source) what key in target are we comparing
-  placeholderTargetKey?: string
+  placeholderTarget?: {
+    key: string
+    typeId: string
+  }
 }
 
 export interface ITypeInfo extends IPlaceholderInfo {
@@ -46,6 +76,7 @@ export interface INodeInfo extends ITypeInfo {
   nodeText?: string
   fullText?: string
   nodeLink?: string
+  declaredId?: string
 }
 
 export interface IProblem {
@@ -82,3 +113,33 @@ export function isShapeProblem(object: any): object is IShapeProblem {
 }
 
 export type DiffTableType = { source?: string; target?: string }[]
+
+export interface ISourceFix {
+  description: string
+  beg: number
+  end: number
+  replace: string
+}
+export interface IPromptFix {
+  prompt: string
+  choices: ISourceFix[]
+}
+
+export interface IFileCache {
+  sourceFile: ts.SourceFile
+  startToNode: Map<number, ts.Node>
+  kindToNodes: Map<ts.SyntaxKind, any[]>
+  returnToContainer: any
+  arrayItemsToTarget: any
+  containerToReturns: any
+  blocksToDeclarations: any
+  nodeIdToNode: any
+  saveNode: (node: ts.Node) => string
+  getNode: (id: string) => ts.Node
+  typeIdToType: any
+  saveType: (type: ts.Type) => string
+  getType: (id: number) => ts.Type
+  outputFileString?: string
+  startToOutputNode: Map<number, { pos: number; end: number }>
+  sourceFixes: ISourceFix[]
+}

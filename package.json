@@ -1,9 +1,10 @@
 {
   "name": "ts-type-diagnostic",
-  "version": "0.0.26",
+  "version": "0.1.2",
   "main": "./bin/cli.js",
   "bin": {
-    "tstd": "./bin/cli.js"
+    "tstd": "./bin/cli.js",
+    "ts-hound": "./bin/cli.js"
   },
   "scripts": {
     "build": "npm run clean && tsc -p .",
@@ -30,8 +31,10 @@
   "dependencies": {
     "@types/lodash": "4.14.192",
     "@types/node": "14.18.22",
+    "@types/inquirer": "^9.0.3",
     "chalk": "^4.1.2",
     "console-table-printer": "2.11.1",
+    "inquirer": "^8.0.0",
     "lint-staged": "^13.0.3",
     "lodash": "4.17.21",
     "prettier": "2.7.1",
