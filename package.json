@@ -1,6 +1,6 @@
 {
   "name": "ts-type-diagnostic",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "main": "./bin/cli.js",
   "bin": {
     "tstd": "./bin/cli.js",
@@ -11,7 +11,7 @@
     "clean": "rm -rf bin",
     "test": "npm run jest --",
     "jest": "jest",
-    "tstd": "ts-node ./cli.ts"
+    "tstd": "ts-node ./cli.ts -v"
   },
   "repository": {
     "type": "git",

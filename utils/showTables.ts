@@ -18,7 +18,6 @@ import {
   addNote,
   andMore,
   asTypeInterfaces,
-  getNodeLink,
   getTypeLink,
   getTypeMap,
   isLikeTypes,
@@ -51,7 +50,9 @@ export function showProblemTables(problems, context, stack) {
   //======================================================================
   // FOR TYPE CONFLICTS, TARGET IS ON THE LEFT AND SOURCE IS ON THE RIGHT TO MATCH 'TARGET = SOURCE' CONVENTION
   // FOR FUNCTION CALLS, THE ORDER IS REVERSED TO MATCH FUNC(ARG) ==> CONST FUNC(PARAM) CONVENTION
-  const { code, callMismatch, sourceTitle = 'Source', targetTitle = 'Target', sourceLink, targetLink } = context
+  const { code, callMismatch, sourceTitle = 'Source', targetTitle = 'Target' } = context
+  const sourceLink = context.sourceLink.split('/').slice(-3).join('/')
+  const targetLink = context.targetLink.split('/').slice(-3).join('/')
   const columns: {
     name: string
     minLen?: number
@@ -278,8 +279,6 @@ function showConflicts(p, problems: (ITypeProblem | IShapeProblem)[], context, s
   const { checker } = context
   // display the path we took to get here
   let spacer = ''
-  // let lastTargetType
-  // let lastSourceType
 
   // reinflate types
   const { sourceInfo, targetInfo } = stack[stack.length - 1]
@@ -323,9 +322,18 @@ function showConflicts(p, problems: (ITypeProblem | IShapeProblem)[], context, s
         color = 'yellow'
       }
     }
+    let target
+    let source
+    if (context.callMismatch) {
+      source = `${min(maxs, sourceInfo?.fullText)}  ${addLink(links, '  ', sourceInfo.nodeLink, color)}`
+      target = `${min(maxs, targetInfo?.fullText)}  ${addLink(links, '  ', targetInfo.nodeLink, color)}`
+    } else {
+      target = `${min(maxs, targetInfo?.fullText)}  ${addLink(links, '  ', targetInfo.nodeLink, color)}`
+      source = `${min(maxs, sourceInfo?.fullText)}  ${addLink(links, '  ', sourceInfo.nodeLink, color)}`
+    }
     const row: any = {
-      target: `${min(maxs, targetInfo?.fullText)}`,
-      source: `${min(maxs, sourceInfo?.fullText)}`,
+      target,
+      source,
     }
     if (arg) {
       row.arg = arg //`\u25B6 ${arg}`
@@ -355,38 +363,30 @@ function showConflicts(p, problems: (ITypeProblem | IShapeProblem)[], context, s
     const { sourceInfo, targetInfo } = layer
     if (inx === 0) {
       const row: any = {
-        target: `${min(maxs, targetInfo?.fullText)}`,
-        source: !sourceInfo.isPlaceholder ? `${min(maxs, sourceInfo?.fullText)}` : '',
+        target: `${min(maxs, targetInfo?.fullText)}  ${addLink(links, '  ', targetInfo.nodeLink, color)}`,
+        source: !sourceInfo.isPlaceholder
+          ? `${min(maxs, sourceInfo?.fullText)}  ${addLink(links, '  ', sourceInfo.nodeLink, color)}`
+          : '',
       }
       if (arg) {
-        row.arg = arg //`\u25B6 ${arg}`
-        row.parm = arg //`\u25B6 ${arg}`
+        row.arg = arg
+        row.parm = arg
       }
       p.addRow(row, { color })
-      spacer += '  '
     } else {
       p.addRow(
         {
-          target: `${spacer}└${min(maxs, targetInfo.fullText)} ${addLink(
-            links,
-            spacer,
-            targetInfo.fullText,
-            targetInfo.nodeLink
-          )}`,
+          target: `${spacer}└${min(maxs, targetInfo.fullText)} ${addLink(links, spacer + '  ', targetInfo.nodeLink)}`,
           source: !sourceInfo.isPlaceholder
-            ? `${spacer}└${min(maxs, sourceInfo.fullText)}  ${addLink(
-                links,
-                spacer,
-                sourceInfo.fullText,
-                sourceInfo.nodeLink
-              )}`
+            ? `${spacer}└${min(maxs, sourceInfo.fullText)}  ${addLink(links, spacer + '  ', sourceInfo.nodeLink)}`
             : '',
         },
         { color }
       )
-      spacer += '  '
     }
+    spacer += '  '
   })
+  spacer += '  '
 
   //======================================================================
   //========= FILL IN THE PROPERTY ROWS ====================================
@@ -438,7 +438,6 @@ function showConflicts(p, problems: (ITypeProblem | IShapeProblem)[], context, s
           target: `${originalSpace}${min(maxs, problem.targetInfo.typeText)}  ${addLink(
             links,
             '  ',
-            problem.targetInfo.typeText,
             getTypeLink(targetType),
             'green'
           )}`,
@@ -458,20 +457,8 @@ function showConflicts(p, problems: (ITypeProblem | IShapeProblem)[], context, s
           targetText = `${propName}: ${sourceMap[propName].typeText} | ... ${addNote(maxs, targetText)}`
         }
         if (inx === 1) {
-          targetText = `${targetText}  ${addLink(
-            links,
-            spacer,
-            targetMap[propName].fullText,
-            targetMap[propName].nodeLink,
-            colors[inx]
-          )}`
-          sourceText = `${sourceText}  ${addLink(
-            links,
-            spacer,
-            sourceMap[propName].fullText,
-            sourceMap[propName].nodeLink,
-            colors[inx]
-          )}`
+          targetText = `${targetText}  ${addLink(links, spacer, targetMap[propName].nodeLink, colors[inx])}`
+          sourceText = `${sourceText}  ${addLink(links, spacer, sourceMap[propName].nodeLink, colors[inx])}`
         }
 
         p.addRow(
@@ -585,9 +572,7 @@ function showConflicts(p, problems: (ITypeProblem | IShapeProblem)[], context, s
             const bump = lastTargetParent ? '   ' : ''
             clr = targetMap[target].isOpt ? 'green' : color
             target = `${spacer + bump}${min(maxs, targetMap[target].fullText)}  ${
-              !hideLinks
-                ? addLink(links, spacer + bump, targetMap[target].fullText, targetMap[target].nodeLink, clr)
-                : ''
+              !hideLinks ? addLink(links, spacer + bump, targetMap[target].nodeLink, clr) : ''
             }`
           } else {
             target = ''
@@ -601,22 +586,13 @@ function showConflicts(p, problems: (ITypeProblem | IShapeProblem)[], context, s
             ) {
               lastSourceParent = sourceMap[source].altParentInfo.fullText
               sourceParent = `${spacer}└─${min(maxs, sourceMap[source].altParentInfo.fullText)}  ${
-                !hideLinks
-                  ? addLink(
-                      links,
-                      spacer,
-                      sourceMap[source].altParentInfo.fullText,
-                      sourceMap[source].altParentInfo.nodeLink
-                    )
-                  : ''
+                !hideLinks ? addLink(links, spacer, sourceMap[source].altParentInfo.nodeLink) : ''
               }`
             }
             const bump = lastSourceParent ? '   ' : ''
             clr = sourceMap[source].isOpt ? 'green' : color
             source = `${spacer + bump}${min(maxs, sourceMap[source].fullText)}  ${
-              !hideLinks
-                ? addLink(links, spacer + bump, sourceMap[source].fullText, sourceMap[source].nodeLink, clr)
-                : ''
+              !hideLinks ? addLink(links, spacer + bump, sourceMap[source].nodeLink, clr) : ''
             }`
           } else {
             source = ''
@@ -670,14 +646,6 @@ function showConflicts(p, problems: (ITypeProblem | IShapeProblem)[], context, s
 export function showTableNotes(problems, context) {
   const { hadSuggestions, notes } = context
   const { maxs, links, interfaces } = notes
-  if (global.isVerbose) {
-    if (problems[0].unchecked && problems[0].unchecked.length) {
-      console.log(`( ${chalk.cyan(problems[0].unchecked.join(', '))} cannot be checked until problems are resolved )`)
-    }
-    if (context.remaining) {
-      console.log(`( ${chalk.cyan(context.remaining)} cannot be checked until problems are resolved )`)
-    }
-  }
 
   // print the table notes:
   if (!hadSuggestions || global.isVerbose) {

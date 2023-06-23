@@ -30,7 +30,7 @@ export function getPropertyInfo(prop: ts.Symbol, context, type?: ts.Type, pseudo
       }
       fullText = `${preface} ${typeText}`
     } else {
-      fullText = getText(declaration)
+      fullText = getPropertyInfoText(checker, declaration, type)
       const declaredType = fullText.split(':').pop()?.trim()
       if (type && type['intrinsicName'] && declaredType !== typeText) {
         fullText += ` as ${typeText}`
@@ -94,31 +94,109 @@ export function getTypeMap(checker: ts.TypeChecker, type: ts.Type, context) {
   return map
 }
 
-export function getFullName(name: ts.Node | string | undefined, type: string | undefined): string {
-  if (name && typeof name !== 'string') {
-    if (name.kind >= ts.SyntaxKind.FirstLiteralToken && name.kind <= ts.SyntaxKind.LastLiteralToken) {
-      type = name.kind === ts.SyntaxKind.FirstLiteralToken ? 'NumericLiteral' : ts.SyntaxKind[name.kind]
-      return `${getText(name)} as ${type}`
-    }
-    name = getText(name)
-  }
-  if (type === 'true' || type === 'false') {
-    return `${name} as boolean`
-  }
-  if (name === type || !name || !type) {
-    if (name && typeof name === 'string') return name
-    if (type && typeof type === 'string') return type
-  }
-  return `${name}: ${type}`
-}
-
 export function getPropText(prop: ts.Symbol) {
   const declarations = prop?.declarations
   if (Array.isArray(declarations)) {
     const declaration = declarations[0]
-    return getText(declaration)
+    return declaration
+      .getText()
+      .split('\n')
+      .map((seg) => seg.trimStart())
+      .join(' ')
   }
   return ''
+}
+
+export function getPropertyInfoText(checker, node, type) {
+  const text = node.getText()
+  const lines = text.split('\n')
+  if (lines.length > 1) {
+    return `${node.name ? `${node.name.escapedText}: ` : ''}${getSimpleInferredInterface(checker, type)}`
+  }
+  return text
+}
+
+export function getNodeText(node) {
+  return node.getChildren().length > 1
+    ? ''
+    : node
+        .getText()
+        .split('\n')
+        .map((seg) => seg.trimStart())
+        .join(' ')
+}
+
+export function getFullText(nodeText, typeText) {
+  return nodeText === typeText || !nodeText || nodeText.startsWith('{') ? typeText : `${nodeText}: ${typeText}`
+}
+
+export function typeToStringLike(checker: ts.TypeChecker, type: ts.Type) {
+  switch (true) {
+    case !!(type.flags & ts.TypeFlags.StringLike):
+      return 'string'
+    case !!(type.flags & ts.TypeFlags.NumberLike):
+      return 'number'
+    case !!(type.flags & ts.TypeFlags.BooleanLike):
+      return 'boolean'
+    case !!(type.flags & ts.TypeFlags.BigIntLike):
+      return 'bigint'
+  }
+  return typeToString(checker, type)
+}
+
+export function typeToString(checker: ts.TypeChecker, type: ts.Type) {
+  return getSimpleInferredInterface(checker, type)
+}
+
+export function getSimpleInferredInterface(checker, type) {
+  const inferred = getInferredInterface(checker, type)
+  if (Array.isArray(inferred)) {
+    return `{${inferred
+      .map((val) => {
+        return typeof val !== 'object' ? val.toString() : '{ .. }'
+      })
+      .join(' | ')}}`
+  } else if (typeof inferred === 'object') {
+    if (inferred.__isSimple) {
+      return inferred.type
+    } else {
+      const keys = Object.keys(inferred)
+      if (keys.length === 1) {
+        const key = keys[0]
+        const type = inferred[key]
+        if (typeof type === 'object') {
+          return `{ ${key}: { ${Object.keys(type).join(', ')} }}`
+        } else {
+          return `{ ${key}: ${type} }`
+        }
+      } else {
+        return `{ ${keys.join(', ')} }`
+      }
+    }
+  }
+  return inferred
+}
+
+export function getInferredInterface(checker, type) {
+  const symbol = type.getSymbol()
+  if (isSimpleType(type) || isFunctionType(checker, type) || !symbol || symbol.flags & ts.SymbolFlags.TypeLiteral) {
+    return checker.typeToString(type)
+  } else if (type['types']) {
+    return type['types'].map((t) => {
+      return getInferredInterface(checker, t)
+    })
+  } else if (symbol.flags & ts.SymbolFlags.ObjectLiteral) {
+    const declaration = symbol.getDeclarations()[0]
+    const inner = {}
+    const children = declaration.properties || declaration.parameters
+    children.forEach((prop) => {
+      const type = checker.getTypeAtLocation(prop)
+      inner[prop.name.escapedText] = getInferredInterface(checker, type)
+    })
+    return inner
+  } else {
+    return { type: symbol.escapedName, isOpt: !!(symbol.flags & ts.SymbolFlags.Optional), __isSimple: true }
+  }
 }
 
 export function min(maxs, type, max = MAX_COLUMN_WIDTH) {
@@ -173,9 +251,9 @@ export function addNote(maxs: string[], note?: string) {
   return num
 }
 
-export function addLink(links: string[], spacer, property, link?: string, color?: string) {
+export function addLink(links: string[], spacer, link?: string, color?: string) {
   const num = String.fromCharCode('\u2460'.charCodeAt(0) + links.length)
-  let fullNote = `${chalk.bold(num)}${spacer}${property.split(':')[0] + ': '}${link}`
+  let fullNote = `${chalk.bold(num)}${spacer}${link}`
   if (color) fullNote = chalk[color](fullNote)
   links.push(fullNote)
   return num
@@ -234,31 +312,6 @@ export function isFunctionType(checker: ts.TypeChecker, type: ts.Type) {
   return checker.typeToTypeNode(type, undefined, 0)?.kind === ts.SyntaxKind.FunctionType
 }
 
-export function typeToString(checker: ts.TypeChecker, type: ts.Type) {
-  return checker.typeToString(type)
-}
-
-export function typeToStringLike(checker: ts.TypeChecker, type: ts.Type) {
-  switch (true) {
-    case !!(type.flags & ts.TypeFlags.StringLike):
-      return 'string'
-    case !!(type.flags & ts.TypeFlags.NumberLike):
-      return 'number'
-    case !!(type.flags & ts.TypeFlags.BooleanLike):
-      return 'boolean'
-    case !!(type.flags & ts.TypeFlags.BigIntLike):
-      return 'bigint'
-  }
-  return checker.typeToString(type)
-}
-
-export function getText(node) {
-  return node
-    .getText()
-    .split('\n')
-    .map((seg) => seg.trimStart())
-    .join(' ')
-}
 export function getTypeLink(type: ts.Type) {
   const declarations = type.getSymbol()?.getDeclarations()
   return getNodeLink(declarations ? declarations[0] : undefined)
@@ -277,14 +330,16 @@ export function findParentExpression(expression) {
 export function getNodeLink(node: ts.Node | undefined) {
   if (node) {
     const file = node.getSourceFile()
-    let relative: string = file.fileName.split(global.homedir).join('~')
-    if (!relative.includes('node_modules/')) {
-      relative = path.relative(global.rootPath || process.argv[1], file.fileName)
-      let arr: string[] = relative.split('/')
+    let fileName: string = file.fileName
+    if (fileName.startsWith(process.cwd()) && !fileName.includes('node_modules/')) {
+      fileName = path.relative(global.rootPath || process.argv[1], fileName)
+      let arr: string[] = fileName.split('/')
       if (arr[0] === '..') arr.shift()
-      relative = arr.slice(-4).join('/')
+      fileName = arr.slice(-4).join('/')
+    } else {
+      fileName = fileName.split(global.homedir).join('~')
     }
-    return `${relative}:${file.getLineAndCharacterOfPosition(node.getStart()).line + 1}`
+    return `${fileName}:${file.getLineAndCharacterOfPosition(node.getStart()).line + 1}`
   }
   return ''
 }
@@ -391,4 +446,27 @@ export function getClosestTarget(checker, errorNode: ts.Node) {
       )
     }) || errorNode
   )
+}
+
+export function getNodeModules(cache, nodeInfos) {
+  const libs = new Set()
+  nodeInfos.forEach(({ primeInfo }) => {
+    // get output node (location in output file we will be making changes)
+    let inputNode = cache.getNode(primeInfo.declaredId || primeInfo.nodeId)
+    let fileName = inputNode.getSourceFile().fileName
+    // can't make changes to a library
+    if (fileName.indexOf('/node_modules/') !== -1) {
+      const arr = fileName.split('node_modules/')[1].split('/')
+      let lib = arr[0]
+      if (lib.startsWith('@')) {
+        lib += `/${arr[1]}`
+      }
+      libs.add(lib)
+    }
+  })
+  return libs.size ? `'${Array.from(libs).join(', ')}'` : ''
+}
+
+export function capitalize(str) {
+  return str[0].toUpperCase() + str.slice(1).toLowerCase()
 }
