@@ -2,6 +2,7 @@
 
 import chalk from 'chalk'
 import inquirer from 'inquirer'
+import ts from 'typescript'
 
 import { whenArraysDontMatch } from './whenArraysDontMatch'
 import { whenUndefinedTypeDoesntMatch } from './whenUndefinedTypeDoesntMatch'
@@ -10,18 +11,17 @@ import { whenPrototypesDontMatch } from './whenPrototypesDontMatch'
 import { whenMismatchedOrMissingTypes } from './whenMismatchedOrMissingTypes'
 import { IPromptFix, ReplacementType } from '../types'
 import { cacheFile, saveOutput } from '../cacheFile'
-import ts from 'typescript'
-import { getNodeLink, typeToStringLike } from '../utils'
+import { getNodeLink, typeToStringLike, getNodeModules, getInferredInterface, capitalize } from '../utils'
 
 //======================================================================
 //======================================================================
 //======================================================================
-//   ____                            _     _____ _
-//  |  _ \ _ __ ___  _ __ ___  _ __ | |_  |  ___(_)_  _____  ___
-//  | |_) | '__/ _ \| '_ ` _ \| '_ \| __| | |_  | \ \/ / _ \/ __|
-//  |  __/| | | (_) | | | | | | |_) | |_  |  _| | |>  <  __/\__ \
-//  |_|   |_|  \___/|_| |_| |_| .__/ \__| |_|   |_/_/\_\___||___/
-//                            |_|
+//   ____  _                                                     _      __ _
+//  / ___|| |__   _____      __  _ __  _ __ ___  _ __ ___  _ __ | |_   / _(_)_  _____  ___
+//  \___ \| '_ \ / _ \ \ /\ / / | '_ \| '__/ _ \| '_ ` _ \| '_ \| __| | |_| \ \/ / _ \/ __|
+//   ___) | | | | (_) \ V  V /  | |_) | | | (_) | | | | | | |_) | |_  |  _| |>  <  __/\__ \
+//  |____/|_| |_|\___/ \_/\_/   | .__/|_|  \___/|_| |_| |_| .__/ \__| |_| |_/_/\_\___||___/
+//                              |_|                       |_|
 //======================================================================
 //======================================================================
 //======================================================================
@@ -46,10 +46,38 @@ export async function showPromptFixes(problems, context, stack) {
   return await chooseFixes(promptFixes, context)
 }
 
+//======================================================================
+//======================================================================
+//======================================================================
+//    ____                _                                                 _      __ _
+//   / ___|_ __ ___  __ _| |_ ___    __ _   _ __  _ __ ___  _ __ ___  _ __ | |_   / _(_)_  __
+//  | |   | '__/ _ \/ _` | __/ _ \  / _` | | '_ \| '__/ _ \| '_ ` _ \| '_ \| __| | |_| \ \/ /
+//  | |___| | |  __/ (_| | ||  __/ | (_| | | |_) | | | (_) | | | | | | |_) | |_  |  _| |>  <
+//   \____|_|  \___|\__,_|\__\___|  \__,_| | .__/|_|  \___/|_| |_| |_| .__/ \__| |_| |_/_/\_\
+//                                         |_|                       |_|
+//======================================================================
+//======================================================================
+//======================================================================
+
 function addChoice(context, promptFixes, prompt, description, nodeInfos) {
   const { cache, fileCache } = context
 
-  // get this fix
+  // if any changes would be to node modules, just use a suggestion
+  const nodeModules = getNodeModules(cache, nodeInfos)
+  if (nodeModules) {
+    suggest(
+      context,
+      `Problem is in an external library ${chalk.green(nodeModules)}. Ignore the error`,
+      getNodeLink(context.errorNode),
+      [
+        '// eslint-disable-next-line @typescript-eslint/ban-ts-comment',
+        `// @ts-expect-error: Fix required in ${nodeModules}`,
+      ]
+    )
+    return
+  }
+
+  // else add a choice
   let sourceFix = promptFixes.find((fix) => fix.prompt === prompt)
   if (!sourceFix) {
     sourceFix = {
@@ -63,21 +91,17 @@ function addChoice(context, promptFixes, prompt, description, nodeInfos) {
     description,
     replacements,
   }
-  // get replacements for this choice
-  const libs = new Set()
-  nodeInfos.forEach(({ primeInfo, otherInfo, type }) => {
-    // get output node (location in output file we will be making changes)
-    let inputNode = cache.getNode(primeInfo.declaredId || primeInfo.nodeId)
-    let fileName = inputNode.getSourceFile().fileName
-    // can't make changes to a library
-    if (fileName.indexOf('/node_modules/') !== -1) {
-      const arr = fileName.split('node_modules/')[1].split('/')
-      let lib = arr[0]
-      if (lib.startsWith('@')) {
-        lib += `/${arr[1]}`
-      }
-      libs.add(lib)
-    } else {
+
+  // if modifying an inferred interface, create interface first
+  const inferredReplacements = getInferredReplacement(context, nodeInfos)
+  if (inferredReplacements) {
+    replacements.push(inferredReplacements)
+  } else {
+    // get replacements for this choice
+    nodeInfos.forEach(({ primeInfo, otherInfo, type }) => {
+      // get output node (location in output file we will be making changes)
+      let inputNode = cache.getNode(primeInfo.declaredId || primeInfo.nodeId)
+      let fileName = inputNode.getSourceFile().fileName
       let outputCache = fileCache[fileName]
       if (!outputCache) {
         outputCache = fileCache[fileName] = cacheFile(inputNode.getSourceFile())
@@ -87,161 +111,100 @@ function addChoice(context, promptFixes, prompt, description, nodeInfos) {
       if (replacement) {
         replacements.push(replacement)
       }
-    }
-  })
+    })
+  }
 
-  if (libs.size) {
-    const externalLibs = `'${Array.from(libs).join(', ')}'`
-    suggest(
-      context,
-      `Problem is in an external library ${chalk.green(externalLibs)}. Ignore the error`,
-      getNodeLink(context.errorNode),
-      [
-        '// eslint-disable-next-line @typescript-eslint/ban-ts-comment',
-        `// @ts-expect-error: Fix required in ${externalLibs}`,
-      ]
-    )
-  } else if (replacements.length) {
-    // add choice
+  // add choice
+  if (replacements.length) {
     choice.replacements = replacements.flat()
     sourceFix.choices.push(choice)
   }
 }
 
-async function chooseFixes(promptFixes, context) {
-  let anyQuit = false
-  // async/await hates map when it's user input
-  for (let promptFix of promptFixes) {
-    const { prompt, choices } = promptFix
-    if (choices.length) {
-      const questions = [
+//======================================================================
+//======================================================================
+//======================================================================
+//    ____      _      __ _                       _                                     _
+//   / ___| ___| |_   / _(_)_  __  _ __ ___ _ __ | | __ _  ___ ___ _ __ ___   ___ _ __ | |_
+//  | |  _ / _ \ __| | |_| \ \/ / | '__/ _ \ '_ \| |/ _` |/ __/ _ \ '_ ` _ \ / _ \ '_ \| __|
+//  | |_| |  __/ |_  |  _| |>  <  | | |  __/ |_) | | (_| | (_|  __/ | | | | |  __/ | | | |_
+//   \____|\___|\__| |_| |_/_/\_\ |_|  \___| .__/|_|\__,_|\___\___|_| |_| |_|\___|_| |_|\__|
+//                                         |_|
+//======================================================================
+//======================================================================
+//======================================================================
+
+function getInferredReplacement(context, nodeInfos) {
+  const { checker, cache, fileCache } = context
+
+  // if they all have the same type
+  let typeId
+  let targetInfo
+  if (
+    nodeInfos.every(({ primeInfo }) => {
+      if (!typeId || primeInfo.typeId === typeId) {
+        typeId = primeInfo.typeId
+        targetInfo = primeInfo
+        return true
+      } else {
+        return false
+      }
+    })
+  ) {
+    // and type is an object literal
+    const symbol = targetInfo.type.getSymbol()
+    if (symbol && symbol.flags & ts.SymbolFlags.ObjectLiteral) {
+      // get output node (location in output file we will be making changes)
+      let inputNode = cache.getNode(targetInfo.declaredId || targetInfo.nodeId)
+      let fileName = inputNode.getSourceFile().fileName
+      let outputCache = fileCache[fileName]
+      if (!outputCache) {
+        outputCache = fileCache[fileName] = cacheFile(inputNode.getSourceFile())
+      }
+      const outputNode = outputCache.startToOutputNode[inputNode.getStart()]
+      const outputInterface = getInferredInterface(checker, targetInfo.type)
+      nodeInfos.forEach(({ otherInfo, type }) => {
+        switch (type) {
+          case ReplacementType.unionType:
+            break
+          case ReplacementType.makeOptional:
+            break
+          case ReplacementType.insertProperty:
+            outputInterface[otherInfo.nodeText] = otherInfo.typeText
+            break
+          case ReplacementType.insertOptionalProperty:
+            outputInterface[otherInfo.nodeText + '?'] = otherInfo.typeText
+            break
+        }
+      })
+
+      const interfaceName = `J${capitalize(targetInfo.nodeText)}`
+      const members = Object.keys(outputInterface).map((key) => {
+        return `${key}: ${outputInterface[key]}`
+      })
+      const statement =
+        ts.findAncestor(outputNode, (node) => {
+          return !!node && node.kind === ts.SyntaxKind.VariableStatement
+        }) || outputNode
+      const interfaceReplacement = `interface ${interfaceName} {\n ${members.join('\n')}\n}`
+      const replacements = [
         {
-          type: 'rawlist',
-          name: 'fix',
-          message: prompt,
-          choices: ['No', 'Quit', ...choices.map((choice: any) => choice.description)],
+          fileName,
+          replace: interfaceReplacement,
+          beg: statement.getStart(),
+          end: statement.getStart(),
+        },
+        {
+          fileName,
+          replace: `: ${interfaceName}`,
+          beg: outputNode.getEnd(),
+          end: outputNode.getEnd(),
         },
       ]
-      const pick = await inquirer.prompt(questions)
-      if (pick.fix === 'Quit') {
-        anyQuit = true
-        break
-      } else if (pick.fix !== 'No') {
-        const pickedFix = choices.find((choice) => choice.description === pick.fix)
-        if (pickedFix) {
-          const description = `${chalk.white(prompt)}: ${pickedFix.description}`
-          pickedFix.replacements.forEach((replacement) => {
-            const sourceFixes = context.fileCache[replacement.fileName].sourceFixes
-            // if this replacement doesn't overlap another in this file
-            if (
-              sourceFixes.every((fix) => {
-                return (
-                  fix.replacements.findIndex(
-                    ({ beg, replace }) => beg === replacement.beg && replace === replacement.replace
-                  ) === -1
-                )
-              })
-            ) {
-              let sourceFix = sourceFixes.find((sfix) => {
-                sfix.description === description
-              })
-              if (!sourceFix) {
-                sourceFix = {
-                  description,
-                  replacements: [],
-                }
-                context.fileCache[replacement.fileName].sourceFixes.push(sourceFix)
-              }
-              sourceFix.replacements.push(replacement)
-            }
-          })
-        }
-      }
+      return replacements
     }
   }
-  return anyQuit
-}
-
-export async function applyFixes(fileCache) {
-  const summary: string[] = []
-  const fileFixes = {}
-  for (const fileName of Object.keys(fileCache)) {
-    const { sourceFixes } = fileCache[fileName]
-    if (sourceFixes.length) {
-      const shortName = fileName.split('/').pop()
-      summary.push(`  File: ${chalk.cyanBright(shortName)}`)
-      const replacements: any[] = []
-      fileFixes[fileName] = {
-        shortName,
-        output: fileCache[fileName].outputFileString,
-        replacements,
-      }
-      sourceFixes.forEach((fix: { description: string; replacements: any[] }) => {
-        summary.push(`   ${fix.description}`)
-        replacements.push(fix.replacements)
-      })
-    }
-  }
-
-  if (summary.length) {
-    console.log(`\n\nSave fixes for:`)
-    summary.forEach((line) => console.log(line))
-    const questions = [
-      {
-        type: 'confirm',
-        name: 'toBeFixed',
-        message: 'Save?',
-        default: true,
-      },
-    ]
-    const answer = await inquirer.prompt(questions)
-    if (answer.toBeFixed) {
-      console.log('')
-      for (const fileName of Object.keys(fileFixes)) {
-        const fixes = fileFixes[fileName]
-        const replacements = fixes.replacements.flat()
-
-        // apply the fixes--last first to preserve positions of above changes
-        replacements.sort((a: { beg: number }, b: { beg: number }) => {
-          return b.beg - a.beg
-        })
-
-        // do replacements
-        let output = fixes.output
-        replacements.forEach(({ beg, end, replace }) => {
-          output = `${output.substring(0, beg)}${replace}${output.substring(end)}`
-        })
-
-        saveOutput(fileName, output)
-        console.log(`-- fixed and saved: ${chalk.cyanBright(fixes.shortName)}--`)
-      }
-    }
-  } else {
-    console.log(`\n--no automatic fixes--`)
-  }
-}
-
-function suggest(context, msg: string, link?: string, code?: string | string[]) {
-  let multiLine = false
-  context.hadSuggestions = true
-  let codeMsg = ''
-  if (code) {
-    multiLine = Array.isArray(code) || code.length > 64
-    if (!multiLine) {
-      codeMsg = `with this ${chalk.greenBright(code)}`
-    }
-  }
-  const linkMsg = link ? chalk.blueBright(link) : ''
-  console.log(chalk.whiteBright(`${msg}${codeMsg ? ` ${codeMsg}` : ''}${linkMsg ? ` here:\n  ${linkMsg}` : ''}`))
-  if (multiLine) {
-    if (Array.isArray(code)) {
-      code.forEach((line) => {
-        console.log(`       ${chalk.greenBright(line)}`)
-      })
-    } else {
-      console.log(chalk.greenBright(codeMsg))
-    }
-  }
+  return undefined
 }
 
 function getReplacement(context, type: ReplacementType, fileName, outputNode: ts.Node, primeInfo, otherInfo) {
@@ -347,18 +310,178 @@ function getReplacement(context, type: ReplacementType, fileName, outputNode: ts
     case ReplacementType.castType: {
       break
     }
-    case ReplacementType.disableError: {
-      // const comment = [
-      //   '// eslint-disable-next-line @typescript-eslint/ban-ts-comment\n',
-      //   `// @ts-expect-error: Fix required in ${externalLibs}\n`,
-      // ]
-      break
+  }
+}
+
+//======================================================================
+//======================================================================
+//======================================================================
+//   ____                           _          _           _                 _
+//  |  _ \ _ __ ___  ___  ___ _ __ | |_    ___| |__   ___ (_) ___ ___  ___  | |_ ___    _   _ ___  ___ _ __
+//  | |_) | '__/ _ \/ __|/ _ \ '_ \| __|  / __| '_ \ / _ \| |/ __/ _ \/ __| | __/ _ \  | | | / __|/ _ \ '__|
+//  |  __/| | |  __/\__ \  __/ | | | |_  | (__| | | | (_) | | (_|  __/\__ \ | || (_) | | |_| \__ \  __/ |
+//  |_|   |_|  \___||___/\___|_| |_|\__|  \___|_| |_|\___/|_|\___\___||___/  \__\___/   \__,_|___/\___|_|
+//======================================================================
+//======================================================================
+//======================================================================
+
+async function chooseFixes(promptFixes, context) {
+  let anyQuit = false
+  // async/await hates map when it's user input
+  for (let promptFix of promptFixes) {
+    const { prompt, choices } = promptFix
+    if (choices.length) {
+      const questions = [
+        {
+          type: 'rawlist',
+          name: 'fix',
+          message: prompt,
+          choices: ['No', 'Quit', ...choices.map((choice: any) => choice.description)],
+        },
+      ]
+      const pick = await inquirer.prompt(questions)
+      if (pick.fix === 'Quit') {
+        anyQuit = true
+        break
+      } else if (pick.fix !== 'No') {
+        const pickedFix = choices.find((choice) => choice.description === pick.fix)
+        if (pickedFix) {
+          const description = `${chalk.white(prompt)}: ${pickedFix.description}`
+          pickedFix.replacements.forEach((replacement) => {
+            const sourceFixes = context.fileCache[replacement.fileName].sourceFixes
+            // if this replacement doesn't overlap another in this file
+            if (
+              sourceFixes.every((fix) => {
+                return (
+                  fix.replacements.findIndex(
+                    ({ beg, replace }) => beg === replacement.beg && replace === replacement.replace
+                  ) === -1
+                )
+              })
+            ) {
+              let sourceFix = sourceFixes.find((sfix) => {
+                sfix.description === description
+              })
+              if (!sourceFix) {
+                sourceFix = {
+                  description,
+                  replacements: [],
+                }
+                context.fileCache[replacement.fileName].sourceFixes.push(sourceFix)
+              }
+              sourceFix.replacements.push(replacement)
+            }
+          })
+        }
+      }
     }
-    case ReplacementType.deleteProperty: {
-      break
+  }
+  return anyQuit
+}
+//======================================================================
+//======================================================================
+//======================================================================
+//      _                _                         _   ____                     __ _
+//     / \   _ __  _ __ | |_   _    __ _ _ __   __| | / ___|  __ ___   _____   / _(_)_  _____  ___
+//    / _ \ | '_ \| '_ \| | | | |  / _` | '_ \ / _` | \___ \ / _` \ \ / / _ \ | |_| \ \/ / _ \/ __|
+//   / ___ \| |_) | |_) | | |_| | | (_| | | | | (_| |  ___) | (_| |\ V /  __/ |  _| |>  <  __/\__ \
+//  /_/   \_\ .__/| .__/|_|\__, |  \__,_|_| |_|\__,_| |____/ \__,_| \_/ \___| |_| |_/_/\_\___||___/
+//          |_|   |_|      |___/
+//======================================================================
+//======================================================================
+//======================================================================
+
+export async function applyFixes(fileCache) {
+  const summary: string[] = []
+  const fileFixes = {}
+  for (const fileName of Object.keys(fileCache)) {
+    const { sourceFixes } = fileCache[fileName]
+    if (sourceFixes.length) {
+      const shortName = fileName.split('/').pop()
+      summary.push(`  File: ${chalk.cyanBright(shortName)}`)
+      const replacements: any[] = []
+      fileFixes[fileName] = {
+        shortName,
+        output: fileCache[fileName].outputFileString,
+        replacements,
+      }
+      sourceFixes.forEach((fix: { description: string; replacements: any[] }) => {
+        summary.push(`   ${fix.description}`)
+        replacements.push(fix.replacements)
+      })
     }
-    case ReplacementType.makeInterfacePartial: {
-      break
+  }
+
+  if (summary.length) {
+    console.log(`\n\nSave fixes for:`)
+    summary.forEach((line) => console.log(line))
+    const questions = [
+      {
+        type: 'confirm',
+        name: 'toBeFixed',
+        message: 'Save?',
+        default: true,
+      },
+    ]
+    const answer = await inquirer.prompt(questions)
+    if (answer.toBeFixed) {
+      console.log('')
+      for (const fileName of Object.keys(fileFixes)) {
+        const fixes = fileFixes[fileName]
+        const replacements = fixes.replacements.flat()
+
+        // apply the fixes--last first to preserve positions of above changes
+        replacements.sort((a: { beg: number }, b: { beg: number }) => {
+          return b.beg - a.beg
+        })
+
+        // do replacements
+        let output = fixes.output
+        replacements.forEach(({ beg, end, replace }) => {
+          output = `${output.substring(0, beg)}${replace}${output.substring(end)}`
+        })
+
+        saveOutput(fileName, output)
+        console.log(`-- fixed and saved: ${chalk.cyanBright(fixes.shortName)}--`)
+      }
+    }
+  } else {
+    console.log(`\n--no automatic fixes--`)
+  }
+}
+
+//======================================================================
+//======================================================================
+//======================================================================
+//   ____                              _
+//  / ___| _   _  __ _  __ _  ___  ___| |_
+//  \___ \| | | |/ _` |/ _` |/ _ \/ __| __|
+//   ___) | |_| | (_| | (_| |  __/\__ \ |_
+//  |____/ \__,_|\__, |\__, |\___||___/\__|
+//               |___/ |___/
+//======================================================================
+//======================================================================
+//======================================================================
+
+function suggest(context, msg: string, link?: string, code?: string | string[]) {
+  let multiLine = false
+  context.hadSuggestions = true
+  let codeMsg = ''
+  if (code) {
+    multiLine = Array.isArray(code) || code.length > 64
+    if (!multiLine) {
+      codeMsg = `with this ${chalk.greenBright(code)}`
+    }
+  }
+  const linkMsg = link ? chalk.blueBright(link) : ''
+  console.log(chalk.whiteBright(`${msg}${codeMsg ? ` ${codeMsg}` : ''}${linkMsg ? ` here:\n  ${linkMsg}` : ''}`))
+  if (multiLine) {
+    if (Array.isArray(code)) {
+      code.forEach((line) => {
+        console.log(`       ${chalk.greenBright(line)}`)
+      })
+    } else {
+      console.log(chalk.greenBright(codeMsg))
     }
   }
 }

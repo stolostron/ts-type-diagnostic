@@ -144,24 +144,6 @@ export function typeToStringLike(checker: ts.TypeChecker, type: ts.Type) {
   return typeToString(checker, type)
 }
 
-// export function getFullName(name: ts.Node | string | undefined, type: string | undefined): string {
-//   if (name && typeof name !== 'string') {
-//     if (name.kind >= ts.SyntaxKind.FirstLiteralToken && name.kind <= ts.SyntaxKind.LastLiteralToken) {
-//       type = name.kind === ts.SyntaxKind.FirstLiteralToken ? 'NumericLiteral' : ts.SyntaxKind[name.kind]
-//       return `${name.getText()} as ${type}`
-//     }
-//     name = name.getText()
-//   }
-//   if (type === 'true' || type === 'false') {
-//     return `${name} as boolean`
-//   }
-//   if (name === type || !name || !type) {
-//     if (name && typeof name === 'string') return name
-//     if (type && typeof type === 'string') return type
-//   }
-//   return `${name}: ${type}`
-// }
-
 export function typeToString(checker: ts.TypeChecker, type: ts.Type) {
   return getSimpleInferredInterface(checker, type)
 }
@@ -349,7 +331,6 @@ export function getNodeLink(node: ts.Node | undefined) {
   if (node) {
     const file = node.getSourceFile()
     let fileName: string = file.fileName
-    const dsfs = process.cwd()
     if (fileName.startsWith(process.cwd()) && !fileName.includes('node_modules/')) {
       fileName = path.relative(global.rootPath || process.argv[1], fileName)
       let arr: string[] = fileName.split('/')
@@ -465,4 +446,27 @@ export function getClosestTarget(checker, errorNode: ts.Node) {
       )
     }) || errorNode
   )
+}
+
+export function getNodeModules(cache, nodeInfos) {
+  const libs = new Set()
+  nodeInfos.forEach(({ primeInfo }) => {
+    // get output node (location in output file we will be making changes)
+    let inputNode = cache.getNode(primeInfo.declaredId || primeInfo.nodeId)
+    let fileName = inputNode.getSourceFile().fileName
+    // can't make changes to a library
+    if (fileName.indexOf('/node_modules/') !== -1) {
+      const arr = fileName.split('node_modules/')[1].split('/')
+      let lib = arr[0]
+      if (lib.startsWith('@')) {
+        lib += `/${arr[1]}`
+      }
+      libs.add(lib)
+    }
+  })
+  return libs.size ? `'${Array.from(libs).join(', ')}'` : ''
+}
+
+export function capitalize(str) {
+  return str[0].toUpperCase() + str.slice(1).toLowerCase()
 }
