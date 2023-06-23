@@ -6,7 +6,7 @@ import { INodeInfo, IPlaceholderInfo, IShapeProblem, ITypeProblem, MatchType } f
 import {
   filterProblems,
   findParentExpression,
-  getFullName,
+  getFullText,
   getPropText,
   getPropertyInfo,
   getTypeLink,
@@ -421,7 +421,7 @@ export function getPlaceholderStack(targetInfo, sourceInfo, context) {
           typeText,
           typeId: context.cache.saveType(type),
           declaredId: context.cache.saveNode(node),
-          fullText: getFullName(nodeText, typeText),
+          fullText: getFullText(nodeText, typeText),
           nodeLink: getTypeLink(type),
         },
       })

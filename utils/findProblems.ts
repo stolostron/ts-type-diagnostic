@@ -3,9 +3,9 @@
 import ts from 'typescript'
 
 import {
-  getFullName,
+  getFullText,
   getNodeLink,
-  getText,
+  getNodeText,
   getTypeLink,
   isArrayType,
   isFunctionLikeKind,
@@ -121,10 +121,11 @@ function createPropertyAccessTargetAndSourceToCompare(targetNode: ts.Node, sourc
   const targetType: ts.Type = checker.getTypeAtLocation(targetNode)
   const targetTypeText = typeToString(checker, targetType)
   const targetDeclaration = getNodeDeclaration(targetNode, context)
+  const targetNodeText = getNodeText(targetNode)
   const targetInfo = {
-    nodeText: getText(targetNode),
+    nodeText: targetNodeText,
     typeText: targetTypeText,
-    fullText: getFullName(targetNode, targetTypeText),
+    fullText: getFullText(targetNodeText, targetTypeText),
     nodeLink: getNodeLink(targetNode),
     typeId: context.cache.saveType(targetType),
     nodeId: context.cache.saveNode(targetDeclaration),
@@ -142,14 +143,14 @@ function createPropertyAccessTargetAndSourceToCompare(targetNode: ts.Node, sourc
     typeText = typeToStringLike(checker, checker.getTypeAtLocation(children[2]))
   }
 
-  const nodeText = getText(sourceNode)
+  const sourceNodeText = getNodeText(sourceNode)
   const placeholderInfo = {
-    nodeText,
+    nodeText: sourceNodeText,
     typeText,
     nodeLink: getNodeLink(sourceNode),
     node: sourceNode,
-    fullText: getFullName(nodeText, typeText),
-    targetKey: nodeText,
+    fullText: getFullText(sourceNodeText, typeText),
+    targetKey: sourceNodeText,
   }
 
   context = {
@@ -185,10 +186,11 @@ function findAssignmentTargetAndSourceToCompare(targetNode: ts.Node, sourceNode:
   const targetType: ts.Type = checker.getTypeAtLocation(targetNode)
   const targetTypeText = typeToString(checker, targetType)
   const targetDeclaration = getNodeDeclaration(targetNode, context)
+  const targetNodeText = getNodeText(targetNode)
   const targetInfo = {
-    nodeText: getText(targetNode),
+    nodeText: targetNodeText,
     typeText: targetTypeText,
-    fullText: getFullName(targetNode, targetTypeText),
+    fullText: getFullText(targetNodeText, targetTypeText),
     nodeLink: getNodeLink(targetDeclaration),
     typeId: context.cache.saveType(targetType),
     nodeId: context.cache.saveNode(targetNode),
@@ -249,7 +251,7 @@ function findAssignmentTargetAndSourceToCompare(targetNode: ts.Node, sourceNode:
         nodeText: targetTypeText,
         typeText: targetTypeText,
         typeId: context.cache.saveType(targetType),
-        fullText: getFullName(targetTypeText, targetTypeText),
+        fullText: getFullText(targetTypeText, targetTypeText),
         nodeLink: getTypeLink(targetType),
         declaredId: context.cache.saveNode(targetDeclaration),
       }
@@ -262,7 +264,7 @@ function findAssignmentTargetAndSourceToCompare(targetNode: ts.Node, sourceNode:
         typeText,
         nodeLink: getNodeLink(sourceNode),
         node: sourceNode,
-        fullText: getFullName(nodeText, typeText),
+        fullText: getFullText(nodeText, typeText),
         placeholderTarget: {
           key: nodeText,
           typeId: targetInfo.typeId,
@@ -286,11 +288,12 @@ function findAssignmentTargetAndSourceToCompare(targetNode: ts.Node, sourceNode:
     }
   }
 
+  const sourceNodeText = getNodeText(sourceNode)
   const sourceTypeText = typeToString(checker, sourceType)
   const sourceInfo = {
-    nodeText: getText(sourceNode),
+    nodeText: sourceNodeText,
     typeText: sourceTypeText,
-    fullText: getFullName(sourceNode, sourceTypeText),
+    fullText: getFullText(sourceNodeText, sourceTypeText),
     nodeLink: getNodeLink(sourceNode),
     typeId: context.cache.saveType(sourceType),
     nodeId: context.cache.saveNode(sourceNode),
@@ -338,7 +341,7 @@ function findReturnStatementTargetAndSourceToCompare(node: ts.Node, containerTyp
     const targetInfo = {
       nodeText: container.parent?.symbol?.getName(),
       typeText: targetTypeText,
-      fullText: getFullName(
+      fullText: getFullText(
         container.parent.kind !== ts.SyntaxKind.SourceFile ? `${container.parent?.symbol?.getName()}: ` : '',
         targetTypeText
       ),
@@ -351,10 +354,16 @@ function findReturnStatementTargetAndSourceToCompare(node: ts.Node, containerTyp
     if (arrayItems) {
       return findArrayItemTargetAndSourceToCompare(arrayItems, targetType, targetInfo, context)
     } else {
+      const sourceNodeText = node
+        .getText()
+        .split('\n')
+        .map((seg) => seg.trimStart())
+        .join(' ')
+
       const sourceInfo = {
-        nodeText: getText(node),
+        nodeText: sourceNodeText,
         typeText: sourceTypeText.replace('return ', ''),
-        fullText: getText(node),
+        fullText: sourceNodeText,
         nodeLink: getNodeLink(node),
         typeId: context.cache.saveType(sourceType),
         nodeId: context.cache.saveNode(node),
@@ -419,14 +428,14 @@ function findFunctionCallTargetAndSourceToCompare(node: ts.Node, errorNode, cont
       let sourceInfo, targetInfo
       if (inx < args.length) {
         const arg = args[inx]
-        const name = getText(arg)
+        const name = getNodeText(arg)
         const type = checker.getTypeAtLocation(arg)
         const typeText = typeToStringLike(checker, type)
         sourceInfo = {
           name,
           type,
           typeText,
-          fullText: getFullName(name, typeText),
+          fullText: getFullText(name, typeText),
           nodeText: name,
           nodeLink: getNodeLink(node),
           typeId: context.cache.saveType(type),
@@ -460,7 +469,7 @@ function findFunctionCallTargetAndSourceToCompare(node: ts.Node, errorNode, cont
           name,
           type,
           typeText,
-          fullText: getFullName(name, typeText),
+          fullText: getFullText(name, typeText),
           nodeText: name,
           nodeLink: getNodeLink(param.valueDeclaration),
           typeId: context.cache.saveType(type),
@@ -602,15 +611,16 @@ function findArrayItemTargetAndSourceToCompare(arrayItems, targetType, targetInf
     if (remaining) {
       pathContext.remaining = remaining === 1 ? `one item` : `${remaining} items`
     }
+    const sourceNodeText = getNodeText(sourceNode)
     compareTypes(
       targetType,
       sourceType,
       [
         {
           sourceInfo: {
-            nodeText: getText(sourceNode),
+            nodeText: sourceNodeText,
             typeText: sourceTypeText,
-            fullText: getFullName(sourceNode, sourceTypeText),
+            fullText: getFullText(sourceNodeText, sourceTypeText),
             nodeLink: getNodeLink(sourceNode),
             typeId: context.cache.saveType(sourceType),
             nodeId: context.cache.saveNode(sourceNode),

@@ -232,7 +232,7 @@ function suggest(context, msg: string, link?: string, code?: string | string[]) 
     }
   }
   const linkMsg = link ? chalk.blueBright(link) : ''
-  console.log(chalk.whiteBright(`${msg}${codeMsg ? ` ${codeMsg}` : ''}${linkMsg ? ` here: ${linkMsg}` : ''}`))
+  console.log(chalk.whiteBright(`${msg}${codeMsg ? ` ${codeMsg}` : ''}${linkMsg ? ` here:\n  ${linkMsg}` : ''}`))
   if (multiLine) {
     if (Array.isArray(code)) {
       code.forEach((line) => {

@@ -45,15 +45,15 @@ export function startSniffing(fileNames: string | any[] | readonly string[], ver
     global.isVerbose = verbose
     global.homedir = os.homedir()
 
-    console.log("Starting 'the hound'...")
+    console.log("Waking 'the hound'...")
     const program = ts.createProgram(fileNames, options)
     checker = program.getTypeChecker()
     const syntactic = program.getSyntacticDiagnostics()
+    console.log("Releasing 'the hound'...")
+    startFixing(program.getSemanticDiagnostics(), fileNames)
     if (syntactic.length) {
       console.log('Warning: there are syntax errors.')
     }
-    console.log("Releasing 'the hound'...")
-    startFixing(program.getSemanticDiagnostics(), fileNames)
   } else {
     console.log('No files specified.')
   }
@@ -98,17 +98,17 @@ async function startFixing(semanticDiagnostics: readonly ts.Diagnostic[], fileNa
           if (!ignoreTheseErrors.includes(errorCode)) {
             hadProblem = false
             const closestTargetNode = getClosestTarget(checker, errorNode)
-            const problemBeg = closestTargetNode.getStart()
+            start = closestTargetNode.getStart()
             // compiler might throw multiple errors for the same problem -- only process one of them
-            if (!processedNodes.has(problemBeg)) {
-              const problems = findProblems(programContext, errorCode, errorNode, closestTargetNode, problemBeg, cache)
+            if (!processedNodes.has(start)) {
+              const problems = findProblems(programContext, errorCode, errorNode, closestTargetNode, start, cache)
               if (problems.length) {
                 allProblems = [...allProblems, ...problems]
-                processedNodes.add(problemBeg)
+                processedNodes.add(start)
                 hadProblem = true
               } else {
                 missingSupport.push(
-                  `For error ${errorCode}, missing support ${ts.SyntaxKind[closestTargetNode.kind]} ${problemBeg}`
+                  `For error ${errorCode}, missing support ${ts.SyntaxKind[closestTargetNode.kind]} ${start}`
                 )
                 missingSupport.push(`${getNodeLink(closestTargetNode)}\n`)
               }

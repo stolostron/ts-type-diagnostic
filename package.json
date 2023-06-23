@@ -11,7 +11,7 @@
     "clean": "rm -rf bin",
     "test": "npm run jest --",
     "jest": "jest",
-    "tstd": "ts-node ./cli.ts"
+    "tstd": "ts-node ./cli.ts -v"
   },
   "repository": {
     "type": "git",
