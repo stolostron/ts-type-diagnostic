@@ -12,7 +12,7 @@
         "tstd",
         //"${file}"
         //"${workspaceFolder}/frontend/src/routes/Applications/AdvancedConfiguration.tsx"
-        //"/Users/johnswanke/Development/git2/uhc-portal-0.z-A/src/components/quota/SubscriptionNotFulfilled.tsx"
+        // "/Users/johnswanke/Development/git2/uhc-portal-0.z-A/src/components/quota/SubscriptionNotFulfilled.tsx"
         "/Users/johnswanke/Development/git2/console-experiments/frontend/src/routes/Applications/ApplicationDetails/ApplicationTopology/topology/components/componentFactory.ts"
       ],
       "runtimeExecutable": "npm",

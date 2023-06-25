@@ -3,6 +3,7 @@
 import chalk from 'chalk'
 import inquirer from 'inquirer'
 import ts from 'typescript'
+import groupBy from 'lodash/groupBy'
 
 import { whenArraysDontMatch } from './whenArraysDontMatch'
 import { whenUndefinedTypeDoesntMatch } from './whenUndefinedTypeDoesntMatch'
@@ -92,31 +93,27 @@ function addChoice(context, promptFixes, prompt, description, nodeInfos) {
     replacements,
   }
 
-  // if modifying an inferred interface, create interface first
-  const inferredReplacements = getInferredReplacement(context, nodeInfos)
-  if (inferredReplacements) {
-    replacements.push(inferredReplacements)
-  } else {
-    // get replacements for this choice
-    nodeInfos.forEach(({ primeInfo, otherInfo, type }) => {
-      // get output node (location in output file we will be making changes)
-      let inputNode = cache.getNode(primeInfo.declaredId || primeInfo.nodeId)
-      let fileName = inputNode.getSourceFile().fileName
-      let outputCache = fileCache[fileName]
-      if (!outputCache) {
-        outputCache = fileCache[fileName] = cacheFile(inputNode.getSourceFile())
-      }
-      const outputNode = outputCache.startToOutputNode[inputNode.getStart()]
-      const replacement = getReplacement(context, type, fileName, outputNode, primeInfo, otherInfo)
-      if (replacement) {
-        replacements.push(replacement)
-      }
-    })
-  }
+  // all changes that require a new interface
+  const { remainingInfos } = getObjectLiteralInfos(context, choice, nodeInfos)
+
+  // changes that don't require a new interface
+  remainingInfos.forEach(({ primeInfo, otherInfo, type }) => {
+    // get output node (location in output file we will be making changes)
+    let inputNode = cache.getNode(primeInfo.declaredId || primeInfo.nodeId)
+    let fileName = inputNode.getSourceFile().fileName
+    let outputCache = fileCache[fileName]
+    if (!outputCache) {
+      outputCache = fileCache[fileName] = cacheFile(inputNode.getSourceFile())
+    }
+    const outputNode = outputCache.startToOutputNode[inputNode.getStart()]
+    const replacement = getReplacement(context, type, fileName, outputNode, primeInfo, otherInfo)
+    if (replacement) {
+      replacements.push(replacement)
+    }
+  })
 
   // add choice
   if (replacements.length) {
-    choice.replacements = replacements.flat()
     sourceFix.choices.push(choice)
   }
 }
@@ -133,79 +130,6 @@ function addChoice(context, promptFixes, prompt, description, nodeInfos) {
 //======================================================================
 //======================================================================
 //======================================================================
-
-function getInferredReplacement(context, nodeInfos) {
-  const { checker, cache, fileCache } = context
-
-  // if they all have the same type
-  let typeId
-  let targetInfo
-  if (
-    nodeInfos.every(({ primeInfo }) => {
-      if (!typeId || primeInfo.typeId === typeId) {
-        typeId = primeInfo.typeId
-        targetInfo = primeInfo
-        return true
-      } else {
-        return false
-      }
-    })
-  ) {
-    // and type is an object literal
-    const symbol = targetInfo.type.getSymbol()
-    if (symbol && symbol.flags & ts.SymbolFlags.ObjectLiteral) {
-      // get output node (location in output file we will be making changes)
-      let inputNode = cache.getNode(targetInfo.declaredId || targetInfo.nodeId)
-      let fileName = inputNode.getSourceFile().fileName
-      let outputCache = fileCache[fileName]
-      if (!outputCache) {
-        outputCache = fileCache[fileName] = cacheFile(inputNode.getSourceFile())
-      }
-      const outputNode = outputCache.startToOutputNode[inputNode.getStart()]
-      const outputInterface = getInferredInterface(checker, targetInfo.type)
-      nodeInfos.forEach(({ otherInfo, type }) => {
-        switch (type) {
-          case ReplacementType.unionType:
-            break
-          case ReplacementType.makeOptional:
-            break
-          case ReplacementType.insertProperty:
-            outputInterface[otherInfo.nodeText] = otherInfo.typeText
-            break
-          case ReplacementType.insertOptionalProperty:
-            outputInterface[otherInfo.nodeText + '?'] = otherInfo.typeText
-            break
-        }
-      })
-
-      const interfaceName = `J${capitalize(targetInfo.nodeText)}`
-      const members = Object.keys(outputInterface).map((key) => {
-        return `${key}: ${outputInterface[key]}`
-      })
-      const statement =
-        ts.findAncestor(outputNode, (node) => {
-          return !!node && node.kind === ts.SyntaxKind.VariableStatement
-        }) || outputNode
-      const interfaceReplacement = `interface ${interfaceName} {\n ${members.join('\n')}\n}`
-      const replacements = [
-        {
-          fileName,
-          replace: interfaceReplacement,
-          beg: statement.getStart(),
-          end: statement.getStart(),
-        },
-        {
-          fileName,
-          replace: `: ${interfaceName}`,
-          beg: outputNode.getEnd(),
-          end: outputNode.getEnd(),
-        },
-      ]
-      return replacements
-    }
-  }
-  return undefined
-}
 
 function getReplacement(context, type: ReplacementType, fileName, outputNode: ts.Node, primeInfo, otherInfo) {
   const { checker, cache } = context
@@ -313,6 +237,62 @@ function getReplacement(context, type: ReplacementType, fileName, outputNode: ts
   }
 }
 
+function getObjectLiteralInfos(context, choice, nodeInfos) {
+  const { checker, cache, fileCache } = context
+
+  // separate choice targets that are literal objects
+  const literalInfos: any[] = []
+  const remainingInfos: any[] = []
+  nodeInfos.forEach((info) => {
+    let type = info.primeInfo.type ? info.primeInfo.type : cache.getType(info.primeInfo.typeId)
+    if (info.type === ReplacementType.unionType && info.primeInfo.parentInfo) {
+      info.targetInfo = info.primeInfo
+      info.primeInfo = info.primeInfo.parentInfo
+      type = info.primeInfo.type = cache.getType(info.primeInfo.typeId)
+    }
+    const symbol = type.getSymbol()
+    if (symbol && symbol.flags & ts.SymbolFlags.ObjectLiteral) {
+      literalInfos.push(info)
+    } else {
+      remainingInfos.push(info)
+    }
+  })
+
+  // for choices that target literal objects, create a single replacement
+  if (literalInfos.length) {
+    choice.description = `Create interface. ${choice.description}`
+    const groupedByLiteralType = groupBy(literalInfos, 'primeInfo.typeId')
+    Object.values(groupedByLiteralType).forEach((fixInfos) => {
+      const targetType = fixInfos[0].primeInfo.type
+      const symbol = targetType.getSymbol()
+      const declarations = symbol?.getDeclarations()
+      if (declarations) {
+        const declaration = declarations[0]
+        const inputNode = declaration.parent.getChildren()[0]
+
+        let fileName = inputNode.getSourceFile().fileName
+        let outputCache = fileCache[fileName]
+        if (!outputCache) {
+          outputCache = fileCache[fileName] = cacheFile(inputNode.getSourceFile())
+        }
+        const outputNode = outputCache.startToOutputNode[inputNode.getStart()]
+
+        // create the information needed to create an interface replacement
+        // when the choices are applied to a file
+        choice.replacements.push({
+          fileName,
+          outputNode,
+          interfaceName: `J${capitalize(outputNode.escapedText)}`,
+          inferredInterface: getInferredInterface(checker, targetType, true),
+          fixInfos,
+        })
+      }
+    })
+  }
+
+  return { remainingInfos }
+}
+
 //======================================================================
 //======================================================================
 //======================================================================
@@ -351,9 +331,10 @@ async function chooseFixes(promptFixes, context) {
             const sourceFixes = context.fileCache[replacement.fileName].sourceFixes
             // if this replacement doesn't overlap another in this file
             if (
-              sourceFixes.every((fix) => {
+              sourceFixes.every(({ replacements }) => {
                 return (
-                  fix.replacements.findIndex(
+                  !!replacements[0].interfaceName ||
+                  replacements.findIndex(
                     ({ beg, replace }) => beg === replacement.beg && replace === replacement.replace
                   ) === -1
                 )
@@ -391,7 +372,7 @@ async function chooseFixes(promptFixes, context) {
 //======================================================================
 //======================================================================
 
-export async function applyFixes(fileCache) {
+export async function applyFixes(checker, fileCache) {
   const summary: string[] = []
   const fileFixes = {}
   for (const fileName of Object.keys(fileCache)) {
@@ -428,7 +409,7 @@ export async function applyFixes(fileCache) {
       console.log('')
       for (const fileName of Object.keys(fileFixes)) {
         const fixes = fileFixes[fileName]
-        const replacements = fixes.replacements.flat()
+        const replacements = getResolvedReplacements(checker, fixes.replacements.flat())
 
         // apply the fixes--last first to preserve positions of above changes
         replacements.sort((a: { beg: number }, b: { beg: number }) => {
@@ -448,6 +429,75 @@ export async function applyFixes(fileCache) {
   } else {
     console.log(`\n--no automatic fixes--`)
   }
+}
+
+function getResolvedReplacements(checker, replacements) {
+  const resolvedReplacements: any = []
+  const interfaceReplacements: any = {}
+
+  replacements.forEach((replacement) => {
+    const { interfaceName } = replacement
+    if (interfaceName) {
+      let arr = interfaceReplacements[interfaceName]
+      if (!arr) {
+        arr = interfaceReplacements[interfaceName] = []
+      }
+      arr.push(replacement)
+    } else {
+      resolvedReplacements.push(replacement)
+    }
+  })
+
+  Object.keys(interfaceReplacements).forEach((iinterface) => {
+    const { fileName, interfaceName, outputNode, inferredInterface } = interfaceReplacements[iinterface][0]
+    // create replacement that will add IXxx to var val: IXxx = {}
+    resolvedReplacements.push({
+      fileName,
+      replace: `: ${interfaceName}`,
+      beg: outputNode.getEnd(),
+      end: outputNode.getEnd(),
+    })
+
+    // apply changes to the inferred object literal
+    interfaceReplacements[iinterface].forEach(({ fixInfos }) => {
+      fixInfos.forEach(({ targetInfo, otherInfo, type }) => {
+        switch (type) {
+          case ReplacementType.unionType:
+            inferredInterface[targetInfo.nodeText] = `${inferredInterface[targetInfo.nodeText]} | ${typeToStringLike(
+              checker,
+              otherInfo.type
+            )}`
+            break
+          case ReplacementType.makeOptional:
+            const save = inferredInterface[targetInfo.nodeText]
+            inferredInterface[targetInfo.nodeText + '?'] = save
+            break
+          case ReplacementType.insertProperty:
+            inferredInterface[otherInfo.nodeText] = otherInfo.typeText
+            break
+          case ReplacementType.insertOptionalProperty:
+            inferredInterface[otherInfo.nodeText + '?'] = otherInfo.typeText
+            break
+        }
+      })
+    })
+
+    // create replacement that will contain the interface content
+    const statement =
+      ts.findAncestor(outputNode, (node) => {
+        return !!node && node.kind === ts.SyntaxKind.VariableStatement
+      }) || outputNode
+    const content = JSON.stringify(inferredInterface).replace(/\\"/g, "'").replace(/"/g, '').replace(/,/g, '\n')
+    const interfaceReplacement = {
+      fileName,
+      replace: `interface ${interfaceName} ${content}\n`,
+      beg: statement.getStart(),
+      end: statement.getStart(),
+    }
+    resolvedReplacements.push(interfaceReplacement)
+  })
+
+  return resolvedReplacements
 }
 
 //======================================================================

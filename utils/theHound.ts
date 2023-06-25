@@ -136,7 +136,7 @@ async function startFixing(semanticDiagnostics: readonly ts.Diagnostic[], fileNa
 
   // apply fixes, save files
   if (anyProblem) {
-    await applyFixes(fileCache)
+    await applyFixes(checker, fileCache)
   }
 
   // show things we didn't know how to process

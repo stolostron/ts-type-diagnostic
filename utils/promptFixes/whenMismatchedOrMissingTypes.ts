@@ -80,37 +80,20 @@ export function whenMismatchedOrMissingTypes(whenContext) {
         ])
       } else {
         const targetType = context.cache.getType(placeholderInfo.placeholderTarget.typeId)
-        const symbol = targetType.getSymbol()
-        const declarations = symbol?.getDeclarations()
+        const declarations = targetType.getSymbol()?.getDeclarations()
         if (declarations) {
           const declaration = declarations[0]
-          const symbol = targetType.getSymbol()
+          const target = chalk.green(declaration.name ? declaration.name.escapedText : 'literal')
+          targetInfo.declaredId = context.cache.saveNode(declaration)
           addChoice = addChoice.bind(null, `Fix missing property?`)
-          if (symbol && symbol.flags & ts.SymbolFlags.ObjectLiteral) {
-            const literalDeclared = declaration.parent.getChildren()[0]
-            const target = chalk.green(literalDeclared.escapedText)
-            targetInfo.declaredId = context.cache.saveNode(literalDeclared)
-            if (errorType === ErrorType.missingIndex) {
-              addChoice(`Create interface for ${target} map and add this index`, [
-                { primeInfo: targetInfo, otherInfo: placeholderInfo, type: ReplacementType.insertProperty },
-              ])
-            } else {
-              addChoice(`Create interface for ${target} and add optional property`, [
-                { primeInfo: targetInfo, otherInfo: placeholderInfo, type: ReplacementType.insertOptionalProperty },
-              ])
-            }
+          if (errorType === ErrorType.missingIndex) {
+            addChoice(`Add this index to ${target} map`, [
+              { primeInfo: targetInfo, otherInfo: placeholderInfo, type: ReplacementType.insertProperty },
+            ])
           } else {
-            const target = chalk.green(declaration.name.escapedText)
-            targetInfo.declaredId = context.cache.saveNode(declaration)
-            if (errorType === ErrorType.missingIndex) {
-              addChoice(`Add this index to ${target} map`, [
-                { primeInfo: targetInfo, otherInfo: placeholderInfo, type: ReplacementType.insertProperty },
-              ])
-            } else {
-              addChoice(`Add optional property to ${targetName} ${target} type`, [
-                { primeInfo: targetInfo, otherInfo: placeholderInfo, type: ReplacementType.insertOptionalProperty },
-              ])
-            }
+            addChoice(`Add optional property to ${targetName} ${target} type`, [
+              { primeInfo: targetInfo, otherInfo: placeholderInfo, type: ReplacementType.insertOptionalProperty },
+            ])
           }
         }
       }
