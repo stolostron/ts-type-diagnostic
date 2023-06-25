@@ -130,7 +130,7 @@ export function getFullText(nodeText, typeText) {
   return nodeText === typeText || !nodeText || nodeText.startsWith('{') ? typeText : `${nodeText}: ${typeText}`
 }
 
-export function typeToStringLike(checker: ts.TypeChecker, type: ts.Type) {
+function getStringLike(type) {
   switch (true) {
     case !!(type.flags & ts.TypeFlags.StringLike):
       return 'string'
@@ -141,6 +141,26 @@ export function typeToStringLike(checker: ts.TypeChecker, type: ts.Type) {
     case !!(type.flags & ts.TypeFlags.BigIntLike):
       return 'bigint'
   }
+  return undefined
+}
+
+export function typeToStringLike(checker: ts.TypeChecker, type: ts.Type) {
+  let like
+  if (type['types']) {
+    const set = new Set()
+    if (
+      type['types'].every((t) => {
+        like = getStringLike(t)
+        set.add(like)
+        return !!like
+      })
+    ) {
+      return Array.from(set).join(' | ')
+    }
+  } else {
+    like = getStringLike(type)
+    if (like) return like
+  }
   return typeToString(checker, type)
 }
 
@@ -149,7 +169,7 @@ export function typeToString(checker: ts.TypeChecker, type: ts.Type) {
 }
 
 export function getSimpleInferredInterface(checker, type) {
-  const inferred = getInferredInterface(checker, type)
+  const inferred = getInferredInterface(checker, type, false)
   if (Array.isArray(inferred)) {
     return `{${inferred
       .map((val) => {
@@ -177,13 +197,13 @@ export function getSimpleInferredInterface(checker, type) {
   return inferred
 }
 
-export function getInferredInterface(checker, type) {
+export function getInferredInterface(checker, type, useAny) {
   const symbol = type.getSymbol()
   if (isSimpleType(type) || isFunctionType(checker, type) || !symbol || symbol.flags & ts.SymbolFlags.TypeLiteral) {
     return checker.typeToString(type)
   } else if (type['types']) {
     return type['types'].map((t) => {
-      return getInferredInterface(checker, t)
+      return getInferredInterface(checker, t, useAny)
     })
   } else if (symbol.flags & ts.SymbolFlags.ObjectLiteral) {
     const declaration = symbol.getDeclarations()[0]
@@ -191,11 +211,13 @@ export function getInferredInterface(checker, type) {
     const children = declaration.properties || declaration.parameters
     children.forEach((prop) => {
       const type = checker.getTypeAtLocation(prop)
-      inner[prop.name.escapedText] = getInferredInterface(checker, type)
+      const isOpt = !!(prop.flags & ts.SymbolFlags.Optional)
+      const name = `${prop.name.escapedText}${isOpt ? '?' : ''}`
+      inner[name] = getInferredInterface(checker, type, useAny)
     })
     return inner
   } else {
-    return { type: symbol.escapedName, isOpt: !!(symbol.flags & ts.SymbolFlags.Optional), __isSimple: true }
+    return useAny ? `any /* ${symbol.escapedName} */` : symbol.escapedName
   }
 }
 
