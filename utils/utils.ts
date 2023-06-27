@@ -32,7 +32,7 @@ export function getPropertyInfo(prop: ts.Symbol, context, type?: ts.Type, pseudo
     } else {
       fullText = getPropertyInfoText(checker, declaration, type)
       const declaredType = fullText.split(':').pop()?.trim()
-      if (type && type['intrinsicName'] && declaredType !== typeText) {
+      if (type && type['intrinsicName'] && declaredType.replace(/;/g, '') !== typeText && typeText !== 'any') {
         fullText += ` as ${typeText}`
       }
       if (type!.flags & ts.TypeFlags.Literal) {
@@ -349,6 +349,22 @@ export function findParentExpression(expression) {
   return undefined
 }
 
+export function getFileLink(file: ts.SourceFile, start: number) {
+  if (file) {
+    let fileName: string = file.fileName
+    if (fileName.startsWith(process.cwd()) && !fileName.includes('node_modules/')) {
+      fileName = path.relative(global.rootPath || process.argv[1], fileName)
+      let arr: string[] = fileName.split('/')
+      if (arr[0] === '..') arr.shift()
+      fileName = arr.slice(-4).join('/')
+    } else {
+      fileName = fileName.split(global.homedir).join('~')
+    }
+    return `${fileName}:${file.getLineAndCharacterOfPosition(start).line + 1}`
+  }
+  return ''
+}
+
 export function getNodeLink(node: ts.Node | undefined) {
   if (node) {
     const file = node.getSourceFile()
@@ -380,8 +396,8 @@ export function mergeShapeProblems(s2tProblem: IShapeProblem, t2sProblem: IShape
     },
     overlap: s2tProblem?.overlap || 0,
     total: Math.max(s2tProblem?.total || 0, t2sProblem?.total || 0),
-    sourceInfo: s2tProblem?.sourceInfo || t2sProblem?.sourceInfo,
-    targetInfo: s2tProblem?.targetInfo || t2sProblem?.targetInfo,
+    sourceInfo: s2tProblem?.sourceInfo || t2sProblem?.targetInfo,
+    targetInfo: s2tProblem?.targetInfo || t2sProblem?.sourceInfo,
     isShapeProblem: true,
   }
   return problem
@@ -475,15 +491,17 @@ export function getNodeModules(cache, nodeInfos) {
   nodeInfos.forEach(({ primeInfo }) => {
     // get output node (location in output file we will be making changes)
     let inputNode = cache.getNode(primeInfo.declaredId || primeInfo.nodeId)
-    let fileName = inputNode.getSourceFile().fileName
-    // can't make changes to a library
-    if (fileName.indexOf('/node_modules/') !== -1) {
-      const arr = fileName.split('node_modules/')[1].split('/')
-      let lib = arr[0]
-      if (lib.startsWith('@')) {
-        lib += `/${arr[1]}`
+    if (inputNode) {
+      let fileName = inputNode.getSourceFile().fileName
+      // can't make changes to a library
+      if (fileName.indexOf('/node_modules/') !== -1) {
+        const arr = fileName.split('node_modules/')[1].split('/')
+        let lib = arr[0]
+        if (lib.startsWith('@')) {
+          lib += `/${arr[1]}`
+        }
+        libs.add(lib)
       }
-      libs.add(lib)
     }
   })
   return libs.size ? `'${Array.from(libs).join(', ')}'` : ''

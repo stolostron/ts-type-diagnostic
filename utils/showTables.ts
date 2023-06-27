@@ -558,7 +558,7 @@ function showConflicts(p, problems: (ITypeProblem | IShapeProblem)[], context, s
               targetMap[target].altParentInfo.fullText !== lastTargetParent
             ) {
               lastTargetParent = targetMap[target].altParentInfo.fullText
-              targetParent = `${spacer}└─${min(maxs, targetMap[target].altParentInfo.fullText)}  ${
+              targetParent = `${spacer} -${min(maxs, targetMap[target].altParentInfo.fullText)}  ${
                 showingMultipleProblems
                   ? ''
                   : addLink(
@@ -585,7 +585,7 @@ function showConflicts(p, problems: (ITypeProblem | IShapeProblem)[], context, s
               sourceMap[source].altParentInfo.fullText !== lastSourceParent
             ) {
               lastSourceParent = sourceMap[source].altParentInfo.fullText
-              sourceParent = `${spacer}└─${min(maxs, sourceMap[source].altParentInfo.fullText)}  ${
+              sourceParent = `${spacer} ─${min(maxs, sourceMap[source].altParentInfo.fullText)}  ${
                 !hideLinks ? addLink(links, spacer, sourceMap[source].altParentInfo.nodeLink) : ''
               }`
             }

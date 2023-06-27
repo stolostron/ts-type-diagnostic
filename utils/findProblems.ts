@@ -133,9 +133,11 @@ function createPropertyAccessTargetAndSourceToCompare(targetNode: ts.Node, sourc
   }
 
   // try to get the type of the accessor using the original expression (a = b)
-  let typeText = 'unknown'
+  let typeText = 'any'
   const expression = ts.findAncestor(context.errorNode, (node) => {
-    return !!node && node.kind === ts.SyntaxKind.ExpressionStatement
+    return (
+      !!node && (node.kind === ts.SyntaxKind.ExpressionStatement || node.kind === ts.SyntaxKind.ElementAccessExpression)
+    )
   })
   if (expression) {
     const statement = expression as ts.ExpressionStatement

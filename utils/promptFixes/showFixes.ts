@@ -99,7 +99,7 @@ function addChoice(context, promptFixes, prompt, description, nodeInfos) {
   // changes that don't require a new interface
   remainingInfos.forEach(({ primeInfo, otherInfo, type }) => {
     // get output node (location in output file we will be making changes)
-    let inputNode = cache.getNode(primeInfo.declaredId || primeInfo.nodeId)
+    let inputNode = primeInfo.node || cache.getNode(primeInfo.declaredId || primeInfo.nodeId)
     let fileName = inputNode.getSourceFile().fileName
     let outputCache = fileCache[fileName]
     if (!outputCache) {
@@ -114,6 +114,11 @@ function addChoice(context, promptFixes, prompt, description, nodeInfos) {
 
   // add choice
   if (replacements.length) {
+    if (replacements[0].fileName !== context.cache.sourceFile.fileName) {
+      choice.description = `${choice.description} ${chalk.magentaBright(
+        `in ${replacements[0].fileName.split('/').pop()}`
+      )}`
+    }
     sourceFix.choices.push(choice)
   }
 }
@@ -201,7 +206,7 @@ function getReplacement(context, type: ReplacementType, fileName, outputNode: ts
         beg = outputNode.getEnd()
         end = beg
       }
-      const sourceTypeLike = typeToStringLike(checker, otherInfo.type)
+      const sourceTypeLike = otherInfo.type ? typeToStringLike(checker, otherInfo.type) : otherInfo.typeText
       return {
         fileName,
         replace: `:${primeInfo.typeText} | ${sourceTypeLike}`,
@@ -218,6 +223,15 @@ function getReplacement(context, type: ReplacementType, fileName, outputNode: ts
           beg: children[1].getStart(),
           end: children[1].getStart(),
         }
+      }
+    }
+    case ReplacementType.insertValue: {
+      const brace = outputNode.getChildren().filter(({ kind }) => kind === ts.SyntaxKind.CloseBraceToken)[0]
+      return {
+        fileName,
+        replace: `${otherInfo.nodeText}: undefined`,
+        beg: brace.getStart(),
+        end: brace.getStart(),
       }
     }
     case ReplacementType.insertProperty:
@@ -250,8 +264,8 @@ function getObjectLiteralInfos(context, choice, nodeInfos) {
       info.primeInfo = info.primeInfo.parentInfo
       type = info.primeInfo.type = cache.getType(info.primeInfo.typeId)
     }
-    const symbol = type.getSymbol()
-    if (symbol && symbol.flags & ts.SymbolFlags.ObjectLiteral) {
+    const symbol = type ? type.getSymbol() : {}
+    if (info.type !== ReplacementType.insertValue && symbol && symbol.flags & ts.SymbolFlags.ObjectLiteral) {
       literalInfos.push(info)
     } else {
       remainingInfos.push(info)
