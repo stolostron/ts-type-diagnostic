@@ -1,5 +1,4 @@
 import chalk from 'chalk'
-import ts from 'typescript'
 import { ErrorType, ReplacementType } from '../types'
 
 // ===============================================================================
@@ -83,7 +82,13 @@ export function whenMismatchedOrMissingTypes(whenContext) {
         const declarations = targetType.getSymbol()?.getDeclarations()
         if (declarations) {
           const declaration = declarations[0]
-          const target = chalk.green(declaration.name ? declaration.name.escapedText : 'literal')
+          let target = 'literal'
+          if (declaration.name) {
+            target = declaration.name.escapedText
+          } else if (declaration.parent.name) {
+            target = declaration.parent.name.escapedText
+          }
+          target = chalk.green(target)
           targetInfo.declaredId = context.cache.saveNode(declaration)
           addChoice = addChoice.bind(null, `Fix missing property?`)
           if (errorType === ErrorType.missingIndex) {
@@ -108,15 +113,19 @@ export function whenMismatchedOrMissingTypes(whenContext) {
 
     case errorType === ErrorType.targetPropMissing:
       addChoice = addChoice.bind(null, `Fix missing properties?`)
-      return addShapeChoice(`Add properties as optional to ${targetName}`, addChoice, whenContext)
+      return addShapeChoice(`Add missing properties to ${targetName}`, addChoice, whenContext)
+
+    case errorType === ErrorType.sourcePropMissing:
+      addChoice = addChoice.bind(null, `Fix missing properties?`)
+      return addShapeChoice(`Add missing properties to ${sourceName}`, addChoice, whenContext)
 
     case errorType === ErrorType.bothMissing:
-      addChoice = addChoice.bind(null, `Fix missing properties??`)
-      return addShapeChoice(`Add or convert properties in ${targetName} to optional `, addChoice, whenContext)
+      addChoice = addChoice.bind(null, `Fix missing properties?`)
+      return addShapeChoice(`Add or convert properties in ${targetName}`, addChoice, whenContext)
 
     case errorType === ErrorType.both:
       addChoice = addChoice.bind(null, `Fix missing and mismatched properties?`)
-      return addShapeChoice(`Union property types and add properties as optional`, addChoice, whenContext)
+      return addShapeChoice(`Union property types and add missing properties`, addChoice, whenContext)
   }
 }
 
@@ -124,7 +133,7 @@ function addShapeChoice(prompt, addChoice, { problems, stack, suggest, context }
   const nodeInfos: any = []
   const problem = problems[0]
   const layer = stack[0]
-  const { targetInfo } = layer
+  const { sourceInfo, targetInfo } = layer
 
   // edge case
   didYouMeanThisChildProperty(suggest, context, stack)
@@ -140,9 +149,14 @@ function addShapeChoice(prompt, addChoice, { problems, stack, suggest, context }
 
   // make any required target properties optional if missing in source
   problem?.reversed?.missing.forEach((key) => {
+    const sourceType = context.cache.getType(problem.sourceInfo.typeId)
+    const declarations = sourceType.getSymbol()?.getDeclarations()
+    const declaration = declarations[0]
+    sourceInfo.declaredId = context.cache.saveNode(declaration)
     nodeInfos.push({
-      primeInfo: context.targetMap[key],
-      type: ReplacementType.makeOptional,
+      primeInfo: sourceInfo,
+      otherInfo: context.targetMap[key],
+      type: ReplacementType.insertValue,
     })
   })
 
@@ -156,7 +170,7 @@ function addShapeChoice(prompt, addChoice, { problems, stack, suggest, context }
       nodeInfos.push({
         primeInfo: targetInfo,
         otherInfo: context.sourceMap[key],
-        type: ReplacementType.insertOptionalProperty,
+        type: ReplacementType.insertProperty,
       })
     })
   }

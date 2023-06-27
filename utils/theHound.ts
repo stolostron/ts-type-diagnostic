@@ -3,12 +3,14 @@
 import path from 'path'
 import ts from 'typescript'
 import { findProblems } from './findProblems'
-import { getClosestTarget, getNodeLink } from './utils'
+import { getClosestTarget, getNodeLink, getFileLink } from './utils'
 import { showProblemTables, showTableNotes } from './showTables'
 import { applyFixes, showPromptFixes } from './promptFixes/showFixes'
 import { cacheFile } from './cacheFile'
 import os from 'os'
 import './globals'
+import chalk from 'chalk'
+import inquirer from 'inquirer'
 
 global.options = {
   target: ts.ScriptTarget.ES5,
@@ -33,7 +35,7 @@ const ignoreTheseErrors = [6133, 6142, 2304, 2305, 2448, 2454, 2593, 7005, 7006,
 //======================================================================
 //======================================================================
 
-export function startSniffing(fileNames: string | any[] | readonly string[], verbose: boolean) {
+export async function startSniffing(fileNames: string | any[] | readonly string[], verbose: boolean) {
   // Read tsconfig.json file
   if (Array.isArray(fileNames) && fileNames.length > 0) {
     const tsconfigPath = ts.findConfigFile(fileNames[0], ts.sys.fileExists, 'tsconfig.json')
@@ -48,11 +50,10 @@ export function startSniffing(fileNames: string | any[] | readonly string[], ver
     console.log("Waking 'the hound'...")
     const program = ts.createProgram(fileNames, options)
     checker = program.getTypeChecker()
-    const syntactic = program.getSyntacticDiagnostics()
-    console.log("Releasing 'the hound'...")
-    startFixing(program.getSemanticDiagnostics(), fileNames)
-    if (syntactic.length) {
-      console.log('Warning: there are syntax errors.')
+    const syntaxErrors = program.getSyntacticDiagnostics()
+    if (!(await fixSyntax(syntaxErrors))) {
+      console.log("Releasing 'the hound'...")
+      startFixing(program.getSemanticDiagnostics(), fileNames)
     }
   } else {
     console.log('No files specified.')
@@ -146,4 +147,24 @@ async function startFixing(semanticDiagnostics: readonly ts.Diagnostic[], fileNa
     console.log(`\n--no squirrels--`)
   }
   console.log('\n\n--------------------------------------------------------------------------')
+}
+
+export async function fixSyntax(syntaxErrors) {
+  if (syntaxErrors.length) {
+    console.log('\n\nWarning: for best results, fix syntax errors before fixing semantic errors:\n')
+    syntaxErrors.forEach(({ code, messageText, file, start }) => {
+      console.log(`  ${code} ${messageText}\n     ${chalk.blue(getFileLink(file, start))}`)
+    })
+    const questions = [
+      {
+        type: 'confirm',
+        name: 'toBeFixed',
+        message: '\n\nStop to fix syntax errors?',
+        default: false,
+      },
+    ]
+    const answer = await inquirer.prompt(questions)
+    return answer.toBeFixed
+  }
+  return false
 }
