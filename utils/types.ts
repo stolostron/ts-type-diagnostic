@@ -28,6 +28,9 @@ export enum ErrorType {
   mustDeclare,
   tooManyArgs,
   tooFewArgs,
+  attrMismatch,
+  attrWrong,
+  attrBoth,
 }
 
 export enum ReplacementType {
@@ -60,8 +63,17 @@ export interface IProblemCache {
 export interface IPlaceholder {
   isPlaceholder?: boolean
 }
+
+export interface IAttributeProblems {
+  missing: string[]
+  mismatch: string[]
+  reverse: string[]
+  sourceMap: {}
+}
+
 export interface IPlaceholderInfo extends IPlaceholder {
   // when comparing with a placeholder (source) what key in target are we comparing
+  attributeProblems?: IAttributeProblems
   placeholderTarget?: {
     key: string
     typeId: string

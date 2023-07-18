@@ -1,8 +1,9 @@
 /* Copyright Contributors to the Open Cluster Management project */
 
 import cloneDeep from 'lodash/cloneDeep'
+import keyBy from 'lodash/keyBy'
 import ts from 'typescript'
-import { INodeInfo, IPlaceholderInfo, IShapeProblem, ITypeProblem, MatchType } from './types'
+import { IAttributeProblems, INodeInfo, IPlaceholderInfo, IShapeProblem, ITypeProblem, MatchType } from './types'
 import {
   filterProblems,
   findParentExpression,
@@ -266,6 +267,79 @@ function compareTypeProperties(firstType, secondType, context) {
     }
   }
   return { problem, recurses }
+}
+
+//======================================================================
+//======================================================================
+//======================================================================
+//    ____                                          _   _   _        _ _           _
+//   / ___|___  _ __ ___  _ __   __ _ _ __ ___     / \ | |_| |_ _ __(_) |__  _   _| |_ ___  ___
+//  | |   / _ \| '_ ` _ \| '_ \ / _` | '__/ _ \   / _ \| __| __| '__| | '_ \| | | | __/ _ \/ __|
+//  | |__| (_) | | | | | | |_) | (_| | | |  __/  / ___ \ |_| |_| |  | | |_) | |_| | ||  __/\__ \
+//   \____\___/|_| |_| |_| .__/ \__,_|_|  \___| /_/   \_\__|\__|_|  |_|_.__/ \__,_|\__\___||___/
+//                       |_|
+//======================================================================
+//======================================================================
+//======================================================================
+export function compareAttributes(targetInfo, sourceInfo, context) {
+  const { checker } = context
+
+  // map by name
+  const targetProps = keyBy(targetInfo.properties, (o) => o.escapedName)
+  const sourceProps = keyBy(
+    sourceInfo.attributes.map((o) => o['symbol']),
+    (o) => o.escapedName
+  )
+
+  // build up missing and mismatched
+  const attributeProblems: IAttributeProblems = {
+    missing: [],
+    mismatch: [],
+    reverse: [],
+    sourceMap: {},
+  }
+  Object.keys(targetProps).forEach((key) => {
+    const targetProp = targetProps[key]
+    const targetPropType = checker.getTypeOfSymbol(targetProp)
+    const sourceProp = sourceProps[key]
+    if (sourceProp) {
+      const sourcePropType = checker.getTypeOfSymbol(sourceProp)
+      const matchType = simpleTypeComparision(checker, sourcePropType, targetPropType)
+      if (matchType !== MatchType.match) {
+        if (matchType !== MatchType.recurse || context.errorNode.escapedText === key) {
+          attributeProblems.mismatch.push(key)
+          attributeProblems.sourceMap[key] = getPropertyInfo(sourceProp, context)
+        }
+      }
+    } else if (!(targetProp.flags & ts.SymbolFlags.Optional)) {
+      attributeProblems.reverse.push(key)
+    }
+  })
+  Object.keys(sourceProps).forEach((key) => {
+    const targetProp = targetProps[key]
+    if (!targetProp) {
+      attributeProblems.sourceMap[key] = getPropertyInfo(sourceProps[key], context)
+      attributeProblems.missing.push(key)
+    }
+  })
+  if (attributeProblems.missing.length || attributeProblems.mismatch.length || attributeProblems.reverse.length) {
+    const stack = [
+      {
+        sourceInfo: {
+          isPlaceholder: true,
+        },
+        targetInfo,
+      },
+    ]
+    sourceInfo.attributeProblems = attributeProblems
+    const problems = [
+      {
+        sourceInfo,
+        targetInfo,
+      },
+    ]
+    context.problems.push({ problems, stack, context })
+  }
 }
 
 //======================================================================

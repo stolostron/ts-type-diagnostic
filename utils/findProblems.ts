@@ -12,7 +12,7 @@ import {
   typeToString,
   typeToStringLike,
 } from './utils'
-import { compareTypes, compareWithPlaceholder, getPlaceholderStack } from './compareTypes'
+import { compareAttributes, compareTypes, compareWithPlaceholder, getPlaceholderStack } from './compareTypes'
 import { IProblemCache } from './types'
 import { getNodeDeclaration } from './cacheFile'
 
@@ -42,6 +42,12 @@ export function findProblems(programContext, code, errorNode: ts.Node, node: ts.
 
   let children = node.getChildren()
   switch (node.kind) {
+    //======================================================================
+    //================= JSX ELEMENT  ==========================
+    //======================================================================
+    case ts.SyntaxKind.JsxOpeningElement:
+      findJSXElementTargetAndSourceToCompare(node, context)
+      break
     //======================================================================
     //================= FUNCTION RETURN  ==========================
     //======================================================================
@@ -312,6 +318,54 @@ function findAssignmentTargetAndSourceToCompare(targetNode: ts.Node, sourceNode:
   pathContext.targetLink = stack[0].targetInfo.nodeLink
   compareTypes(targetType, sourceType, stack, pathContext)
   return pathContext.problems.length > 0
+}
+
+//======================================================================
+//======================================================================
+//======================================================================
+//       _ ______  __  _____ _                           _
+//      | / ___\ \/ / | ____| | ___ _ __ ___   ___ _ __ | |_
+//   _  | \___ \\  /  |  _| | |/ _ \ '_ ` _ \ / _ \ '_ \| __|
+//  | |_| |___) /  \  | |___| |  __/ | | | | |  __/ | | | |_
+//   \___/|____/_/\_\ |_____|_|\___|_| |_| |_|\___|_| |_|\__|
+
+//======================================================================
+//======================================================================
+//======================================================================
+
+function findJSXElementTargetAndSourceToCompare(node: ts.Node, context) {
+  const { checker } = context
+  const children = node.getChildren()
+  const signatureParam = checker.getSignaturesOfType(checker.getTypeAtLocation(children[1]))[0].getParameters()[0]
+  const targetNode = children[1]
+  const targetType = checker.getTypeOfSymbol(signatureParam)
+  const targetTypeText = typeToString(checker, targetType)
+  const targetNodeText = getNodeText(targetNode)
+  const targetDeclaration = checker.getTypeAtLocation(children[1]).getSymbol().getDeclarations()[0]
+  const targetInfo = {
+    nodeText: targetNodeText,
+    typeText: targetTypeText,
+    fullText: getFullText(targetNodeText, targetTypeText),
+    nodeLink: getNodeLink(targetDeclaration),
+    typeId: context.cache.saveType(targetType),
+    nodeId: context.cache.saveNode(targetNode),
+    declaredId: context.cache.saveNode(targetDeclaration),
+    properties: targetType.getProperties(),
+  }
+  const sourceNode = children[2]
+  const sourceInfo = {
+    attributes: children[2]['properties'],
+  }
+  const pathContext = {
+    ...context,
+    isJSXProblem: true,
+    sourceLink: getNodeLink(sourceNode),
+    targetLink: targetInfo.nodeLink,
+    sourceTitle: 'Attributes',
+    targetTitle: 'Component',
+  }
+  compareAttributes(targetInfo, sourceInfo, pathContext)
+  return context.problems.length > 0
 }
 
 //======================================================================

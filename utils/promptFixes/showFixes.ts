@@ -440,8 +440,6 @@ export async function applyFixes(checker, fileCache) {
         console.log(`-- fixed and saved: ${chalk.cyanBright(fixes.shortName)}--`)
       }
     }
-  } else {
-    console.log(`\n--no automatic fixes--`)
   }
 }
 

@@ -282,6 +282,7 @@ export function addLink(links: string[], spacer, link?: string, color?: string) 
 }
 
 export function isSimpleType(type: ts.Type | ts.TypeFlags) {
+  if (!type) return false
   const flags = type['flags'] ? type['flags'] : type
   return (
     !(
@@ -294,6 +295,7 @@ export function isSimpleType(type: ts.Type | ts.TypeFlags) {
 }
 
 export function isNeverType(type: ts.Type) {
+  if (!type) return false
   if (type.flags & ts.TypeFlags.Object) {
     const typeArguments = type['typeArguments']
     if (!Array.isArray(typeArguments) || typeArguments.length !== 1) {
@@ -305,6 +307,7 @@ export function isNeverType(type: ts.Type) {
 }
 
 export function isLikeTypes(source: ts.Type | ts.TypeFlags, target: ts.Type | ts.TypeFlags) {
+  if (!source) return false
   const sourceFlags = source['flags'] ? source['flags'] : source
   const targetFlags = target['flags'] ? target['flags'] : target
   return [
@@ -327,15 +330,21 @@ export function isStructuredType(type: ts.Type | ts.TypeFlags | undefined) {
 }
 
 export function isArrayType(checker: ts.TypeChecker, type: ts.Type) {
+  if (!type) return false
   return checker.typeToTypeNode(type, undefined, 0)?.kind === ts.SyntaxKind.ArrayType
 }
 
 export function isFunctionType(checker: ts.TypeChecker, type: ts.Type) {
+  if (!type) return false
   return checker.typeToTypeNode(type, undefined, 0)?.kind === ts.SyntaxKind.FunctionType
 }
 
 export function getTypeLink(type: ts.Type) {
-  const declarations = type.getSymbol()?.getDeclarations()
+  return getSymbolLink(type.getSymbol())
+}
+
+export function getSymbolLink(symbol?: ts.Symbol) {
+  const declarations = symbol?.getDeclarations()
   return getNodeLink(declarations ? declarations[0] : undefined)
 }
 
@@ -480,7 +489,8 @@ export function getClosestTarget(checker, errorNode: ts.Node) {
           node.kind === ts.SyntaxKind.VariableDeclaration ||
           node.kind === ts.SyntaxKind.ExpressionStatement ||
           (node.kind === ts.SyntaxKind.PropertyAccessExpression && !!(errorType.flags & ts.TypeFlags.Any)) ||
-          node.kind === ts.SyntaxKind.CallExpression)
+          node.kind === ts.SyntaxKind.CallExpression ||
+          node.kind === ts.SyntaxKind.JsxOpeningElement)
       )
     }) || errorNode
   )
