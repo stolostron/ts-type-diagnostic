@@ -3,16 +3,7 @@
 import chalk from 'chalk'
 import { Table } from 'console-table-printer'
 
-import {
-  DiffTableType,
-  ErrorType,
-  IShapeProblem,
-  ITypeProblem,
-  MAX_SHOWN_PROP_MISMATCH,
-  MatchType,
-  isShapeProblem,
-} from './types'
-import { simpleTypeComparision } from './compareTypes'
+import { DiffTableType, ErrorType, IShapeProblem, ITypeProblem, MAX_SHOWN_PROP_MISMATCH, isShapeProblem } from './types'
 import {
   addLink,
   addNote,
@@ -167,6 +158,15 @@ export function showProblemTables(problems, context, stack) {
     case ErrorType.tooFewArgs:
       specs = `Too ${chalk.red('few')} calling arguments`
       break
+    case ErrorType.attrMismatch:
+      specs = `Component is ${chalk.yellow('mismatched')} with these JSX attributes`
+      break
+    case ErrorType.attrWrong:
+      specs = `Component is ${chalk.red('missing')} these JSX attributes`
+      break
+    case ErrorType.attrBoth:
+      specs = `Component is ${chalk.yellow('mismatched')} and ${chalk.red('missing')} these JSX attributes`
+      break
   }
 
   console.log(`TS${code}: ${specs} (${context.problemBeg})`)
@@ -187,14 +187,11 @@ export function showProblemTables(problems, context, stack) {
 //======================================================================
 //======================================================================
 function showCallingArgumentConflicts(p, problems, context, stack): ErrorType {
-  const { checker } = context
   let errorType: ErrorType = ErrorType.none
   context.callingPairs.forEach(({ sourceInfo, targetInfo }, inx) => {
     if (sourceInfo && targetInfo) {
-      const { typeId: sourceTypeId, typeText: sourceTypeText, fullText: sourceFullText } = sourceInfo
-      const { typeId: targetTypeId, typeText: targetTypeText, fullText: targetFullText } = targetInfo
-      const sourceType = (sourceInfo.type = context.cache.getType(sourceTypeId))
-      const targetType = (targetInfo.type = context.cache.getType(targetTypeId))
+      const { typeText: sourceTypeText, fullText: sourceFullText } = sourceInfo
+      const { typeText: targetTypeText, fullText: targetFullText } = targetInfo
       if (inx !== context.errorIndex) {
         let skipRow = false
         let color = 'green'
@@ -202,21 +199,6 @@ function showCallingArgumentConflicts(p, problems, context, stack): ErrorType {
           if (context.errorIndex === -1 && errorType === ErrorType.none && problems && problems.length) {
             errorType = showConflicts(p, problems, context, stack, inx + 1)
             skipRow = true
-          }
-          switch (simpleTypeComparision(checker, sourceType, targetType)) {
-            case MatchType.mismatch:
-            case MatchType.bigley:
-              color = 'yellow'
-              break
-            case MatchType.never:
-              color = 'magenta'
-              break
-            case MatchType.recurse:
-              color = 'cyan'
-              break
-            default:
-              color = 'green'
-              break
           }
         }
         if (!skipRow) {
@@ -396,7 +378,7 @@ function showConflicts(p, problems: (ITypeProblem | IShapeProblem)[], context, s
   const showingMultipleProblems = problems.length > 1 // showing multiple union types as a possible match
   if (showingMultipleProblems) spacer += '  '
   problems.forEach((problem) => {
-    const {
+    let {
       mismatch = [],
       misslike = [],
       matched = [],
@@ -429,6 +411,16 @@ function showConflicts(p, problems: (ITypeProblem | IShapeProblem)[], context, s
       } else {
         missing.push(key)
       }
+    } else if (sourceInfo.attributeProblems) {
+      const parentLayer = stack[stack.length - 1]
+      targetType = context.cache.getType(parentLayer.targetInfo.typeId)
+      targetMap = context.targetMap = getTypeMap(checker, targetType, context)
+      sourceMap = sourceInfo.attributeProblems.sourceMap
+      missing = sourceInfo.attributeProblems.missing
+      mismatch = sourceInfo.attributeProblems.mismatch
+      reversed.missing = sourceInfo.attributeProblems.reverse
+      const sourceKeys = Object.keys(sourceMap)
+      reversed.contextual = Object.keys(targetMap).filter((k) => !sourceKeys.includes(k))
     }
 
     // TYPENAME ROW -- if showing multiple types
@@ -522,19 +514,19 @@ function showConflicts(p, problems: (ITypeProblem | IShapeProblem)[], context, s
     if (misslike.length) {
       errorType = ErrorType.misslike
     } else if (missing.length && mismatch.length) {
-      errorType = ErrorType.both
+      errorType = context.isJSXProblem ? ErrorType.attrBoth : ErrorType.both
     } else if (missing.length || (reversed && reversed.missing.length)) {
       if (context.missingIndex) {
         errorType = ErrorType.missingIndex
       } else if (missing.length && reversed && reversed.missing.length) {
-        errorType = ErrorType.bothMissing
+        errorType = context.isJSXProblem ? ErrorType.attrWrong : ErrorType.bothMissing
       } else if (missing.length) {
-        errorType = ErrorType.targetPropMissing
+        errorType = context.isJSXProblem ? ErrorType.attrWrong : ErrorType.targetPropMissing
       } else {
         errorType = ErrorType.sourcePropMissing
       }
     } else if (mismatch.length) {
-      errorType = ErrorType.propMismatch
+      errorType = context.isJSXProblem ? ErrorType.attrMismatch : ErrorType.propMismatch
     }
 
     //======================================================================
@@ -616,10 +608,18 @@ function showConflicts(p, problems: (ITypeProblem | IShapeProblem)[], context, s
           )
           return false
         } else {
+          let source = ''
+          let target = ''
+          const more = andMore(interfaces, conflicts, interfaceMaps)
+          if (Object.keys(targetMap).length > Object.keys(sourceMap).length) {
+            target = more
+          } else {
+            source = more
+          }
           p.addRow(
             {
-              source: andMore(interfaces, conflicts, interfaceMaps),
-              target: '',
+              source,
+              target,
             },
             { color: clr }
           )

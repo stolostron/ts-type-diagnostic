@@ -1,5 +1,7 @@
 import chalk from 'chalk'
 import { ErrorType, ReplacementType } from '../types'
+import stringSimilarity from 'string-similarity'
+import { getSymbolLink } from '../utils'
 
 // ===============================================================================
 // ===============================================================================
@@ -58,8 +60,24 @@ export function whenMismatchedOrMissingTypes(whenContext) {
       break
 
     //
+    // MISSING
+    case errorType === ErrorType.attrWrong || errorType === ErrorType.attrBoth: {
+      const missing = problems[0].sourceInfo.attributeProblems.missing
+      const available = targetInfo.properties.map((p) => p.escapedName)
+      const matches = stringSimilarity.findBestMatch(missing[0], available)
+      const {
+        bestMatch: { rating, target },
+      } = matches
+      if (rating > 0.7) {
+        const symbol = targetInfo.properties.find((p) => p.escapedName === target)
+        suggest(`Did you mean to use ${chalk.redBright(target)} instead`, getSymbolLink(symbol))
+      }
+      break
+    }
+
+    //
     // PLACEHOLDER
-    case sourceInfo.isPlaceholder: {
+    case sourceInfo.isPlaceholder && context.placeholderInfo: {
       const { targetMap, placeholderInfo } = context
       const targetKey = placeholderInfo.placeholderTarget ? placeholderInfo.placeholderTarget.key : sourceInfo.targetKey
 
@@ -139,7 +157,7 @@ function addShapeChoice(prompt, addChoice, { problems, stack, suggest, context }
   didYouMeanThisChildProperty(suggest, context, stack)
 
   // fix any property type mismatches
-  problem.mismatch.forEach((key) => {
+  problem?.mismatch?.forEach((key) => {
     nodeInfos.push({
       primeInfo: context.sourceMap[key],
       otherInfo: context.targetMap[key],
@@ -150,18 +168,20 @@ function addShapeChoice(prompt, addChoice, { problems, stack, suggest, context }
   // make any required target properties optional if missing in source
   problem?.reversed?.missing.forEach((key) => {
     const sourceType = context.cache.getType(problem.sourceInfo.typeId)
-    const declarations = sourceType.getSymbol()?.getDeclarations()
-    const declaration = declarations[0]
-    sourceInfo.declaredId = context.cache.saveNode(declaration)
-    nodeInfos.push({
-      primeInfo: sourceInfo,
-      otherInfo: context.targetMap[key],
-      type: ReplacementType.insertValue,
-    })
+    if (sourceType) {
+      const declarations = sourceType.getSymbol()?.getDeclarations()
+      const declaration = declarations[0]
+      sourceInfo.declaredId = context.cache.saveNode(declaration)
+      nodeInfos.push({
+        primeInfo: sourceInfo,
+        otherInfo: context.targetMap[key],
+        type: ReplacementType.insertValue,
+      })
+    }
   })
 
   // add any missing source properties as optional target properties
-  if (problem.missing.length) {
+  if (problem?.missing?.length) {
     const targetType = context.cache.getType(problem.targetInfo.typeId)
     const declarations = targetType.getSymbol()?.getDeclarations()
     const declaration = declarations[0]
