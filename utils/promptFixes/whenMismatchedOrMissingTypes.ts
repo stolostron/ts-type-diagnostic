@@ -61,7 +61,7 @@ export function whenMismatchedOrMissingTypes(whenContext) {
 
     //
     // MISSING
-    case errorType === ErrorType.attrWrong || errorType === ErrorType.attrBoth: {
+    case errorType === ErrorType.attrUnknown || errorType === ErrorType.attrBoth: {
       const missing = problems[0].sourceInfo.attributeProblems.missing
       const available = targetInfo.properties.map((p) => p.escapedName)
       const matches = stringSimilarity.findBestMatch(missing[0], available)

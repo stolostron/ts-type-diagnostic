@@ -159,17 +159,20 @@ export function showProblemTables(problems, context, stack) {
       specs = `Too ${chalk.red('few')} calling arguments`
       break
     case ErrorType.attrMismatch:
-      specs = `Component is ${chalk.yellow('mismatched')} with these JSX attributes`
+      specs = `JSX attribute types are${chalk.yellow('mismatched')}`
       break
-    case ErrorType.attrWrong:
-      specs = `Component is ${chalk.red('missing')} these JSX attributes`
+    case ErrorType.attrMissing:
+      specs = `Required JSX attributes are ${chalk.red('missing')}`
+      break
+    case ErrorType.attrUnknown:
+      specs = `JSX attributes are ${chalk.red('unknown')}`
       break
     case ErrorType.attrBoth:
-      specs = `Component is ${chalk.yellow('mismatched')} and ${chalk.red('missing')} these JSX attributes`
+      specs = `JSX attributes are ${chalk.yellow('mismatched')} and ${chalk.red('unknown')}`
       break
   }
 
-  console.log(`TS${code}: ${specs} (${context.problemBeg})`)
+  console.log(`TS${code}: ${specs}`)
 
   // print the table
   p.printTable()
@@ -519,11 +522,11 @@ function showConflicts(p, problems: (ITypeProblem | IShapeProblem)[], context, s
       if (context.missingIndex) {
         errorType = ErrorType.missingIndex
       } else if (missing.length && reversed && reversed.missing.length) {
-        errorType = context.isJSXProblem ? ErrorType.attrWrong : ErrorType.bothMissing
+        errorType = context.isJSXProblem ? ErrorType.attrMissing : ErrorType.bothMissing
       } else if (missing.length) {
-        errorType = context.isJSXProblem ? ErrorType.attrWrong : ErrorType.targetPropMissing
+        errorType = context.isJSXProblem ? ErrorType.attrUnknown : ErrorType.targetPropMissing
       } else {
-        errorType = ErrorType.sourcePropMissing
+        errorType = context.isJSXProblem ? ErrorType.attrMissing : ErrorType.sourcePropMissing
       }
     } else if (mismatch.length) {
       errorType = context.isJSXProblem ? ErrorType.attrMismatch : ErrorType.propMismatch

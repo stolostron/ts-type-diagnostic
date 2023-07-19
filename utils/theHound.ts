@@ -85,7 +85,7 @@ async function startFixing(semanticDiagnostics: readonly ts.Diagnostic[], fileNa
     fileCache,
   }
 
-  let allProblems: { problems: any[]; stack: any[]; context: any }[] = []
+  let allProblems: { problems: any[]; suggestions?: string[]; stack: any[]; context: any }[] = []
   semanticDiagnostics.forEach(({ code: errorCode, file, start }) => {
     if (file && fileNames.includes(file.fileName)) {
       const fileName = file.fileName
@@ -124,13 +124,17 @@ async function startFixing(semanticDiagnostics: readonly ts.Diagnostic[], fileNa
   // show problems, prompt for fixes
   let anyQuit = false
   for (const problem of allProblems) {
-    const { problems, stack, context } = problem
-    showProblemTables(problems, context, stack)
-    showTableNotes(problems, context)
-    anyQuit = await showPromptFixes(problems, context, stack)
-    console.log('\n\n')
-    if (anyQuit) {
-      break
+    const { problems, suggestions, stack, context } = problem
+    if (suggestions) {
+      suggestions.forEach((sug) => console.log(sug))
+    } else {
+      showProblemTables(problems, context, stack)
+      showTableNotes(problems, context)
+      anyQuit = await showPromptFixes(problems, context, stack)
+      console.log('\n\n')
+      if (anyQuit) {
+        break
+      }
     }
   }
   if (anyQuit) return
