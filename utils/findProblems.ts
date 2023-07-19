@@ -1,7 +1,8 @@
 /* Copyright Contributors to the Open Cluster Management project */
 
 import ts from 'typescript'
-
+import stringSimilarity from 'string-similarity'
+import chalk from 'chalk'
 import {
   getFullText,
   getNodeLink,
@@ -14,7 +15,7 @@ import {
 } from './utils'
 import { compareAttributes, compareTypes, compareWithPlaceholder, getPlaceholderStack } from './compareTypes'
 import { IProblemCache } from './types'
-import { getNodeDeclaration } from './cacheFile'
+import { getNodeBlockId, getNodeDeclaration } from './cacheFile'
 
 //======================================================================
 //======================================================================
@@ -101,12 +102,52 @@ export function findProblems(programContext, code, errorNode: ts.Node, node: ts.
       }
       break
     }
-    default:
-      console.log(`For error ${code}, missing support for kind === ${node.kind}`)
-      console.log(getNodeLink(node))
-      break
+  }
+  if (context.problems.length === 0) {
+    otherSolutions(context)
   }
   return context.problems
+}
+
+//======================================================================
+//======================================================================
+//======================================================================
+//    ___  _   _                 ____        _       _   _
+//   / _ \| |_| |__   ___ _ __  / ___|  ___ | |_   _| |_(_) ___  _ __  ___
+//  | | | | __| '_ \ / _ \ '__| \___ \ / _ \| | | | | __| |/ _ \| '_ \/ __|
+//  | |_| | |_| | | |  __/ |     ___) | (_) | | |_| | |_| | (_) | | | \__ \
+//   \___/ \__|_| |_|\___|_|    |____/ \___/|_|\__,_|\__|_|\___/|_| |_|___/
+//======================================================================
+//======================================================================
+//======================================================================
+
+function otherSolutions(context) {
+  const { cache, code, errorNode } = context
+  const suggestions: string[] = []
+
+  if (errorNode.kind === ts.SyntaxKind.Identifier) {
+    const arrayExpression = ts.findAncestor(errorNode, (node) => {
+      return !!node && node.kind === ts.SyntaxKind.ArrayLiteralExpression
+    })
+    if (arrayExpression) {
+      suggestions.push(`TS${code}: Unknown variable in array ${chalk.red(errorNode.escapedText)}`)
+      const blockId = getNodeBlockId(arrayExpression)
+      let declareMap = cache.blocksToDeclarations[blockId]
+      const matches = stringSimilarity.findBestMatch(errorNode.escapedText, Object.keys(declareMap))
+      const {
+        bestMatch: { rating, target },
+      } = matches
+      if (rating > 0.6) {
+        suggestions.push(chalk.white(`Did you mean to use ${chalk.redBright(target)} instead here?`))
+        suggestions.push(chalk.blue(`  ${getNodeLink(arrayExpression)}`))
+      }
+      context.problems.push({ suggestions, context })
+      return
+    }
+  }
+
+  console.log(`For error ${code}, missing support for kind === ${errorNode.kind}`)
+  console.log(getNodeLink(errorNode))
 }
 
 //======================================================================

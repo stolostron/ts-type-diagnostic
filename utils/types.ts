@@ -29,7 +29,8 @@ export enum ErrorType {
   tooManyArgs,
   tooFewArgs,
   attrMismatch,
-  attrWrong,
+  attrMissing,
+  attrUnknown,
   attrBoth,
 }
 
