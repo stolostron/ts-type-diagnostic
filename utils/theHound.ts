@@ -53,7 +53,11 @@ export async function startSniffing(fileNames: string | any[] | readonly string[
     const syntaxErrors = program.getSyntacticDiagnostics()
     if (!(await fixSyntax(syntaxErrors))) {
       console.log("Releasing 'the hound'...")
-      startFixing(program.getSemanticDiagnostics(), fileNames)
+      const semanticErrors = program.getSemanticDiagnostics()
+      if (semanticErrors.length <= 3) {
+        global.isVerbose = true
+      }
+      startFixing(semanticErrors, fileNames)
     }
   } else {
     console.log('No files specified.')
@@ -109,9 +113,11 @@ async function startFixing(semanticDiagnostics: readonly ts.Diagnostic[], fileNa
                 hadProblem = true
               } else {
                 missingSupport.push(
-                  `For error ${errorCode}, missing support ${ts.SyntaxKind[closestTargetNode.kind]} ${start}`
+                  `For error ${errorCode}, missing support ${ts.SyntaxKind[closestTargetNode.parent.kind]}/${
+                    ts.SyntaxKind[closestTargetNode.kind]
+                  } `
                 )
-                missingSupport.push(`${getNodeLink(closestTargetNode)}\n`)
+                missingSupport.push(`  ${chalk.blue(getNodeLink(closestTargetNode))}\n`)
               }
             }
           }
