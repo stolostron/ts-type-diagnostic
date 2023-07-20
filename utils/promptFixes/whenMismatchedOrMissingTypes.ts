@@ -64,14 +64,14 @@ export function whenMismatchedOrMissingTypes(whenContext) {
     case errorType === ErrorType.attrUnknown || errorType === ErrorType.attrBoth: {
       const missing = problems[0].sourceInfo.attributeProblems.missing
       const available = targetInfo.properties.map((p) => p.escapedName)
-      const matches = stringSimilarity.findBestMatch(missing[0], available)
-      const {
-        bestMatch: { rating, target },
-      } = matches
-      if (rating > 0.7) {
+      missing.forEach((miss) => {
+        const matches = stringSimilarity.findBestMatch(miss, available)
+        const {
+          bestMatch: { target },
+        } = matches
         const symbol = targetInfo.properties.find((p) => p.escapedName === target)
         suggest(`Did you mean to use ${chalk.redBright(target)} instead`, getSymbolLink(symbol))
-      }
+      })
       break
     }
 

@@ -317,7 +317,7 @@ export function compareAttributes(targetInfo, sourceInfo, context) {
   })
   Object.keys(sourceProps).forEach((key) => {
     const targetProp = targetProps[key]
-    if (!targetProp) {
+    if (!targetProp && key !== 'ref') {
       attributeProblems.sourceMap[key] = getPropertyInfo(sourceProps[key], context)
       attributeProblems.missing.push(key)
     }
